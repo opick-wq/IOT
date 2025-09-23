@@ -6,7 +6,7 @@ import sys
 # --- PENGATURAN ---
 # Pastikan port ini sudah benar sesuai Arduino IDE Anda
 SERIAL_PORT = 'COM4' 
-BAUD_RATE = 115200
+BAUD_RATE = 9600
 WEBSOCKET_HOST = 'localhost'
 WEBSOCKET_PORT = 8765
 # ------------------
