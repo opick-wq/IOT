@@ -4,10 +4,9 @@ import serial
 import sys
 
 # --- PENGATURAN ---
-# Ganti 'COM3' dengan port Arduino Anda.
-# Cara cek: Buka Arduino IDE, lihat di menu Tools > Port.
+# Pastikan port ini sudah benar sesuai Arduino IDE Anda
 SERIAL_PORT = 'COM4' 
-BAUD_RATE = 9600
+BAUD_RATE = 115200
 WEBSOCKET_HOST = 'localhost'
 WEBSOCKET_PORT = 8765
 # ------------------
@@ -23,7 +22,9 @@ async def serial_reader(websocket_server):
                 print(f"✅ Berhasil terhubung ke Arduino di port {SERIAL_PORT}")
                 while True:
                     # Baca satu baris data UID dari Arduino
-                    uid_line = ser.readline().decode('utf-8').strip()
+                    # Tambahkan errors='ignore' untuk membuang data 'sampah' saat booting
+                    uid_line = ser.readline().decode('utf-8', errors='ignore').strip()
+                    
                     if uid_line:
                         print(f"💳 Kartu terdeteksi! UID: {uid_line}")
                         # Kirim UID ke semua browser yang terhubung
