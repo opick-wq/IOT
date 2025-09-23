@@ -28,7 +28,7 @@
                     <div class="rfid-input-group">
                         <input type="text" id="rfid_uid" name="rfid_uid" placeholder="Tempelkan kartu pada alat..." readonly required>
                     </div>
-                    <small>UID akan terisi otomatis saat kartu ditempelkan pada alat pembaca.</small>
+                    <small id="rfid-helper">UID akan terisi otomatis saat kartu ditempelkan pada alat pembaca.</small>
                 </div>
                 <div class="form-group">
                     <label for="photo">Foto Wajah</label>
@@ -40,29 +40,54 @@
         
         <footer>
             <div id="status-message"></div>
-            <a href="/">Kembali ke Halaman Absen</a>
+            <div class="navigation-links">
+                 <a href="/">Kembali ke Halaman Absen</a>
+            </div>
         </footer>
     </div>
 
     <script>
-        // Simulasi penerimaan UID dari alat pembaca
-        document.addEventListener('keydown', (e) => {
-            const rfidField = document.getElementById('rfid_uid');
-            if (document.activeElement !== rfidField) {
-                if (e.key === "Enter") {
-                    rfidField.value = rfidInputBuffer;
-                    rfidInputBuffer = '';
-                } else {
-                    rfidInputBuffer = (rfidInputBuffer || '') + e.key;
-                }
-            }
-        });
+        const rfidField = document.getElementById('rfid_uid');
+        const rfidHelper = document.getElementById('rfid-helper');
+        
+        // --- KONEKSI KE PROGRAM JEMBATAN (WEBSOCKET) ---
+        const ws = new WebSocket('ws://localhost:8765');
 
+        ws.onopen = function() {
+            console.log("Terhubung ke program jembatan.");
+            rfidHelper.textContent = "Alat pembaca terhubung. Silakan tempelkan kartu baru Anda.";
+            rfidHelper.style.color = "#28a745"; // Warna hijau
+        };
+
+        ws.onmessage = function(event) {
+            const rfid = event.data;
+            console.log(`UID diterima untuk pendaftaran: ${rfid}`);
+            // Masukkan UID yang diterima ke dalam kolom formulir
+            rfidField.value = rfid;
+            rfidHelper.textContent = `Kartu dengan UID ${rfid} berhasil terdeteksi!`;
+        };
+
+        ws.onclose = function() {
+            console.log("Koneksi ke program jembatan terputus.");
+            rfidHelper.textContent = "Koneksi ke alat pembaca terputus! Pastikan program bridge.py berjalan.";
+            rfidHelper.style.color = "#dc3545"; // Warna merah
+        };
+        
+        ws.onerror = function() {
+            console.error("Gagal terhubung ke WebSocket server.");
+            rfidHelper.textContent = "Gagal terhubung ke alat pembaca! Jalankan program bridge.py di komputer Anda.";
+            rfidHelper.style.color = "#dc3545"; // Warna merah
+        };
+
+        // --- Logika untuk submit form (TETAP SAMA) ---
         const form = document.getElementById('register-form');
         const statusMessage = document.getElementById('status-message');
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(form);
+            const submitButton = document.getElementById('submit-btn');
+            
+            submitButton.disabled = true;
             statusMessage.textContent = 'Mendaftarkan...';
             statusMessage.className = 'loading';
 
@@ -77,9 +102,13 @@
                 statusMessage.textContent = result.message;
                 statusMessage.className = 'success';
                 form.reset();
+                rfidHelper.textContent = "Pendaftaran berhasil! Silakan tempelkan kartu baru lagi.";
+
             } catch (error) {
                 statusMessage.textContent = `Error: ${error.message}`;
                 statusMessage.className = 'error';
+            } finally {
+                submitButton.disabled = false;
             }
         });
     </script>
