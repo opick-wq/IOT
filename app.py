@@ -9,8 +9,8 @@ from datetime import datetime
 
 # Inisialisasi koneksi ke Supabase
 # Ambil dari Project Settings > API di Supabase
-SUPABASE_URL = "https://bzulwuhcmmbmtwmgyerb.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6dWx3dWhjbW1ibXR3bWd5ZXJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg2MTc4MTEsImV4cCI6MjA3NDE5MzgxMX0.v4tVyjmDv8PhKWQlbtFuKUBwAM2OafDTnsxXwL2g0ns"
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = Flask(__name__)
