@@ -72,7 +72,7 @@ def register_employee():
         file_path_in_storage = f"photos/{rfid_uid}{file_extension}"
         
         photo.seek(0)
-        supabase.storage.from_('employee_assets').upload(file_path_in_storage, photo.read(), {"content-type": photo.mimetype})
+        supabase.storage.from_('employee_photos').upload(file_path_in_storage, photo.read(), {"content-type": photo.mimetype})
         
         # Dapatkan URL publik dari foto yang diunggah
         public_url_data = supabase.storage.from_('employee_assets').get_public_url(file_path_in_storage)
