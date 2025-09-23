@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Data Absensi Karyawan</title>
+</head>
+<body>
+    <h1>Data Absensi</h1>
+    <a href="/register">Daftarkan Karyawan Baru</a>
+    <hr>
+    <table border="1">
+        <thead>
+            <tr>
+                <th>Nama</th>
+                <th>Status</th>
+                <th>Waktu</th>
+                <th>Tipe Absensi</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for record in records %}
+            <tr>
+                <td>{{ record.employees.name }}</td>
+                <td>{{ record.employees.status }}</td>
+                <td>{{ record.timestamp }}</td>
+                <td>{{ record.type }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

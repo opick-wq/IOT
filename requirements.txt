@@ -1,0 +1,6 @@
+Flask
+supabase-py
+face_recognition
+numpy
+opencv-python
+requests

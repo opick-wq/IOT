@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-g">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daftar Karyawan Baru</title>
+</head>
+<body>
+    <h1>Form Pendaftaran Karyawan</h1>
+    <form action="/register" method="post" enctype="multipart/form-data">
+        <label for="name">Nama:</label><br>
+        <input type="text" id="name" name="name" required><br><br>
+
+        <label for="status">Status:</label><br>
+        <input type="text" id="status" name="status" required><br><br>
+
+        <label for="rfid_uid">UID Kartu RFID:</label><br>
+        <input type="text" id="rfid_uid" name="rfid_uid" required><br>
+        <small>Tempelkan kartu pada alat untuk melihat UID di Serial Monitor Arduino.</small><br><br>
+
+        <label for="photo">Foto Wajah:</label><br>
+        <input type="file" id="photo" name="photo" accept="image/*" required><br><br>
+
+        <button type="submit">Daftarkan</button>
+    </form>
+</body>
+</html>
