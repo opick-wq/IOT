@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Absensi Karyawan</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Sistem Absensi Cerdas</h1>
+            <p>Tempelkan Kartu RFID Anda</p>
+        </header>
+
+        <main>
+            <div id="main-content">
+                <div class="scanner-placeholder">
+                    <p>Menunggu Kartu...</p>
+                </div>
+            </div>
+            
+            <div id="verification-content" class="hidden">
+                <div class="profile-card">
+                    <img id="stored-photo" src="" alt="Foto Karyawan">
+                    <h2 id="employee-name"></h2>
+                    <p id="employee-status"></p>
+                </div>
+                <div class="camera-card">
+                    <video id="webcam" autoplay playsinline></video>
+                    <canvas id="canvas" class="hidden"></canvas>
+                    <button id="capture-btn">Ambil Foto & Absen</button>
+                </div>
+            </div>
+        </main>
+        
+        <footer>
+            <div id="status-message"></div>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

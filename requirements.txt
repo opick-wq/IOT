@@ -1,6 +1,4 @@
 Flask
 supabase
-#face_recognition
-numpy
-opencv-python
 requests
+python-dotenv
