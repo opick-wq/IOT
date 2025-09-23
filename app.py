@@ -1,7 +1,7 @@
 import os
 import requests
 from flask import Flask, render_template, request, jsonify
-from supabase_py import create_client, Client
+from supabase import create_client, Client
 from dotenv import load_dotenv
 
 # Muat environment variables dari file .env untuk development lokal
