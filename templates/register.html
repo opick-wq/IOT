@@ -1,27 +1,87 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-g">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daftar Karyawan Baru</title>
+    <title>Pendaftaran Karyawan Baru</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>Form Pendaftaran Karyawan</h1>
-    <form action="/register" method="post" enctype="multipart/form-data">
-        <label for="name">Nama:</label><br>
-        <input type="text" id="name" name="name" required><br><br>
+    <div class="container">
+        <header>
+            <h1>Formulir Pendaftaran</h1>
+            <p>Isi data karyawan baru di bawah ini.</p>
+        </header>
 
-        <label for="status">Status:</label><br>
-        <input type="text" id="status" name="status" required><br><br>
+        <main class="form-main">
+            <form id="register-form">
+                <div class="form-group">
+                    <label for="name">Nama Lengkap</label>
+                    <input type="text" id="name" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label for="status">Status (e.g., Karyawan Tetap, Magang)</label>
+                    <input type="text" id="status" name="status" required>
+                </div>
+                <div class="form-group">
+                    <label for="rfid_uid">UID Kartu RFID</label>
+                    <div class="rfid-input-group">
+                        <input type="text" id="rfid_uid" name="rfid_uid" placeholder="Tempelkan kartu pada alat..." readonly required>
+                    </div>
+                    <small>UID akan terisi otomatis saat kartu ditempelkan pada alat pembaca.</small>
+                </div>
+                <div class="form-group">
+                    <label for="photo">Foto Wajah</label>
+                    <input type="file" id="photo" name="photo" accept="image/*" required>
+                </div>
+                <button type="submit" id="submit-btn">Daftarkan Karyawan</button>
+            </form>
+        </main>
+        
+        <footer>
+            <div id="status-message"></div>
+            <a href="/">Kembali ke Halaman Absen</a>
+        </footer>
+    </div>
 
-        <label for="rfid_uid">UID Kartu RFID:</label><br>
-        <input type="text" id="rfid_uid" name="rfid_uid" required><br>
-        <small>Tempelkan kartu pada alat untuk melihat UID di Serial Monitor Arduino.</small><br><br>
+    <script>
+        // Simulasi penerimaan UID dari alat pembaca
+        document.addEventListener('keydown', (e) => {
+            const rfidField = document.getElementById('rfid_uid');
+            if (document.activeElement !== rfidField) {
+                if (e.key === "Enter") {
+                    rfidField.value = rfidInputBuffer;
+                    rfidInputBuffer = '';
+                } else {
+                    rfidInputBuffer = (rfidInputBuffer || '') + e.key;
+                }
+            }
+        });
 
-        <label for="photo">Foto Wajah:</label><br>
-        <input type="file" id="photo" name="photo" accept="image/*" required><br><br>
+        const form = document.getElementById('register-form');
+        const statusMessage = document.getElementById('status-message');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            statusMessage.textContent = 'Mendaftarkan...';
+            statusMessage.className = 'loading';
 
-        <button type="submit">Daftarkan</button>
-    </form>
+            try {
+                const response = await fetch('/api/register-employee', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error);
+                
+                statusMessage.textContent = result.message;
+                statusMessage.className = 'success';
+                form.reset();
+            } catch (error) {
+                statusMessage.textContent = `Error: ${error.message}`;
+                statusMessage.className = 'error';
+            }
+        });
+    </script>
 </body>
 </html>

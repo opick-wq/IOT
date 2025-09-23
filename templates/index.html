@@ -10,13 +10,14 @@
     <div class="container">
         <header>
             <h1>Sistem Absensi Cerdas</h1>
-            <p>Tempelkan Kartu RFID Anda</p>
+            <p>Silakan Lakukan Absensi</p>
         </header>
 
         <main>
             <div id="main-content">
                 <div class="scanner-placeholder">
                     <p>Menunggu Kartu...</p>
+                    <small>Gunakan alat pembaca RFID Anda, lalu ketik UID yang muncul di Serial Monitor ke halaman ini dan tekan Enter.</small>
                 </div>
             </div>
             
@@ -29,13 +30,17 @@
                 <div class="camera-card">
                     <video id="webcam" autoplay playsinline></video>
                     <canvas id="canvas" class="hidden"></canvas>
-                    <button id="capture-btn">Ambil Foto & Absen</button>
+                    <button id="capture-btn">Ambil Foto & Catat Absensi</button>
                 </div>
             </div>
         </main>
         
         <footer>
             <div id="status-message"></div>
+            <div class="navigation-links">
+                <a href="/register">Daftarkan Karyawan Baru</a> | 
+                <a href="/report">Lihat Laporan Absensi</a>
+            </div>
         </footer>
     </div>
 

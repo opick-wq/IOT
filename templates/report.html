@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laporan Absensi</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .report-table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
+        .report-table th, .report-table td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        .report-table th { background-color: #f2f2f2; }
+        .print-btn { margin-top: 1rem; }
+        @media print {
+            body * { visibility: hidden; }
+            .print-area, .print-area * { visibility: visible; }
+            .print-area { position: absolute; left: 0; top: 0; width: 100%; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Laporan Riwayat Absensi</h1>
+            <p>Berikut adalah catatan kehadiran seluruh karyawan.</p>
+        </header>
+
+        <main class="print-area">
+            {% if error %}
+                <p class="error">{{ error }}</p>
+            {% endif %}
+            <table class="report-table">
+                <thead>
+                    <tr>
+                        <th>Nama Karyawan</th>
+                        <th>Status</th>
+                        <th>Waktu Absen</th>
+                        <th>Tipe</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in records %}
+                    <tr>
+                        <td>{{ record.employees.name or 'N/A' }}</td>
+                        <td>{{ record.employees.status or 'N/A' }}</td>
+                        <td>{{ record.timestamp }}</td>
+                        <td>{{ record.type }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4">Belum ada data absensi.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </main>
+        
+        <footer>
+            <button onclick="window.print()" class="no-print print-btn">Cetak Laporan</button>
+            <a href="/" class="no-print">Kembali ke Halaman Absen</a>
+        </footer>
+    </div>
+</body>
+</html>
