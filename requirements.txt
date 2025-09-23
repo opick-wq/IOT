@@ -1,5 +1,5 @@
 Flask
-supabase-py
+supabase
 face_recognition
 numpy
 opencv-python
