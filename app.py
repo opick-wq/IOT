@@ -18,17 +18,15 @@ HUGGING_FACE_KEY = os.environ.get("HUGGING_FACE_KEY")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Model yang benar dan URL API-nya
-HF_API_URL = "https://api-inference.huggingface.co/models/google/vit-base-patch16-224"
+# --- MODEL AI YANG BENAR UNTUK FITUR EKSTRAKSI GAMBAR (EMBEDDING) ---
+HF_API_URL = "https://api-inference.huggingface.co/models/openai/clip-vit-base-patch32"
 HF_HEADERS = {"Authorization": f"Bearer {HUGGING_FACE_KEY}"}
 
 
-# --- FUNGSI BANTUAN UNTUK AI (SUDAH DIPERBAIKI) ---
+# --- FUNGSI BANTUAN UNTUK AI ---
 
 def get_image_embedding(image_data: bytes, content_type: str):
-    """Mengirim data gambar (bytes) ke Hugging Face dengan Content-Type yang benar."""
-    
-    # Salin header otorisasi dan tambahkan Content-Type yang spesifik
+    """Mengirim data gambar (bytes) ke Hugging Face untuk mendapatkan fitur embedding."""
     request_headers = HF_HEADERS.copy()
     request_headers["Content-Type"] = content_type
 
@@ -37,7 +35,9 @@ def get_image_embedding(image_data: bytes, content_type: str):
     if response.status_code != 200:
         print(f"Hugging Face API Error: {response.status_code} - {response.text}")
         raise Exception("Gagal mendapatkan fitur wajah dari Hugging Face API.")
-    return response.json()
+    
+    # Model CLIP mengembalikan list berisi satu list (vektor), kita ambil list di dalamnya
+    return response.json()[0]
 
 def cosine_similarity(vec1, vec2):
     """Menghitung kemiripan antara dua vektor wajah."""
@@ -108,23 +108,20 @@ def get_employee_data():
 
 @app.route('/api/verify-and-record', methods=['POST'])
 def verify_and_record():
-    """API untuk verifikasi wajah dan mencatat absensi (SUDAH DIPERBAIKI)."""
+    """API untuk verifikasi wajah dan mencatat absensi."""
     try:
         rfid_uid = request.form.get('rfid')
         live_image_file = request.files.get('live_image')
 
-        # 1. Dapatkan data karyawan
         response = supabase.table('employees').select('id, name, image_url').eq('rfid_uid', rfid_uid).single().execute()
         employee = response.data
         if not employee:
             return jsonify({"error": "Karyawan tidak ditemukan"}), 404
         
-        # 2. Ambil gambar asli dari URL Supabase
         stored_image_response = requests.get(employee['image_url'])
         if stored_image_response.status_code != 200:
             return jsonify({"error": "Gagal mengunduh foto karyawan."}), 500
         
-        # 3. Dapatkan 'sidik jari wajah' dari KEDUA gambar dengan Content-Type yang benar
         print("🔍 Memproses foto tersimpan...")
         stored_content_type = stored_image_response.headers.get('Content-Type', 'image/jpeg')
         stored_embedding = get_image_embedding(stored_image_response.content, stored_content_type)
@@ -133,16 +130,13 @@ def verify_and_record():
         live_image_bytes = live_image_file.read()
         live_embedding = get_image_embedding(live_image_bytes, live_image_file.mimetype)
 
-        # 4. Hitung skor kemiripan
         similarity_score = cosine_similarity(stored_embedding, live_embedding)
         print(f"✨ Skor Kemiripan Wajah: {similarity_score:.4f}")
 
-        # 5. Tentukan apakah wajah cocok (di atas 90%)
         SIMILARITY_THRESHOLD = 0.90
         if similarity_score < SIMILARITY_THRESHOLD:
             return jsonify({"error": f"Verifikasi wajah gagal! Kemiripan hanya {similarity_score:.2%}"}), 401
         
-        # 6. Jika cocok, catat absensi
         print("✅ Wajah cocok! Mencatat absensi...")
         today_str = datetime.now().strftime('%Y-%m-%d')
         records_response = supabase.table('attendance_records').select('id').eq('employee_id', employee['id']).filter('timestamp', 'gte', f"{today_str}T00:00:00").execute()
