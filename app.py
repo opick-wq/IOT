@@ -29,7 +29,15 @@ HF_HEADERS = {"Authorization": f"Bearer {HUGGING_FACE_KEY}"}
 
 def get_image_embedding(image_data: bytes):
     """Mengirim data gambar (bytes) ke Hugging Face untuk mendapatkan fitur embedding."""
-    response = requests.post(HF_API_URL, headers=HF_HEADERS, data=image_data)
+    
+    # Tambahkan header Content-Type yang sesuai dengan jenis gambar.
+    # Untuk file gambar, tipe umumnya adalah 'application/octet-stream'.
+    headers_with_content_type = HF_HEADERS.copy() # Salin header asli
+    headers_with_content_type["Content-Type"] = "application/octet-stream"
+
+    # Kirim request dengan header yang sudah diperbarui
+    response = requests.post(HF_API_URL, headers=headers_with_content_type, data=image_data)
+    
     if response.status_code != 200:
         print(f"Hugging Face API Error: {response.status_code} - {response.text}")
         raise Exception("Gagal mendapatkan fitur wajah dari Hugging Face API.")
