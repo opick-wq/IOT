@@ -173,5 +173,3 @@ def verify_and_record():
 # Untuk menjalankan server secara lokal saat testing
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
-
-    #dd
