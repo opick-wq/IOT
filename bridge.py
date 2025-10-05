@@ -1,70 +1,59 @@
-import asyncio
-import websockets
 import serial
-import sys
+import threading
+import time
+from flask import Flask, jsonify
+from flask_cors import CORS
 
 # --- PENGATURAN ---
 SERIAL_PORT = 'COM4' 
 BAUD_RATE = 9600
-WEBSOCKET_HOST = 'localhost'
-WEBSOCKET_PORT = 8765
 # ------------------
 
-connected_clients = set()
+# Variabel global untuk menyimpan UID terakhir
+latest_uid = None
+last_read_time = 0
 
-async def register(websocket):
-    """Mendaftarkan koneksi baru."""
-    print(f"🖥️  Browser terhubung: {websocket.remote_address}")
-    connected_clients.add(websocket)
-    try:
-        await websocket.wait_closed()
-    finally:
-        print(f"🔴 Browser terputus: {websocket.remote_address}")
-        connected_clients.remove(websocket)
-
-async def serial_reader():
-    """Membaca data dari serial port dan mengirimkannya ke semua browser."""
+def read_from_arduino():
+    """Fungsi ini berjalan di background untuk membaca serial."""
+    global latest_uid, last_read_time
     while True:
         try:
-            with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=2) as ser:
+            with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1) as ser:
                 print(f"✅ Berhasil terhubung ke Arduino di port {SERIAL_PORT}")
-                # Beri waktu sejenak agar data 'sampah' saat boot lewat
-                await asyncio.sleep(2) 
-                
                 while True:
-                    # Baca satu baris data UID dari Arduino
-                    uid_line = ser.readline().decode('utf-8', errors='ignore').strip()
-                    
-                    # Hanya kirim jika UID tidak kosong (menghindari baris kosong)
-                    if uid_line:
-                        print(f"💳 Kartu terdeteksi! UID: {uid_line}")
-                        # Kirim UID ke semua browser yang terhubung
-                        if connected_clients:
-                            await asyncio.wait([client.send(uid_line) for client in connected_clients])
+                    line = ser.readline().decode('utf-8').strip()
+                    if line:
+                        latest_uid = line
+                        last_read_time = time.time()
+                        print(f"💳 Kartu terdeteksi! UID: {latest_uid}")
         except serial.SerialException:
-            print(f"🔌 Gagal terhubung ke Arduino di port {SERIAL_PORT}. Mencoba lagi dalam 5 detik...")
-            await asyncio.sleep(5)
+            print(f"🔌 Gagal terhubung ke Arduino. Mencoba lagi dalam 5 detik...")
+            time.sleep(5)
         except Exception as e:
-            print(f"Terjadi error pada pembaca serial: {e}")
-            await asyncio.sleep(5)
+            print(f"Error di thread serial: {e}")
+            time.sleep(5)
 
-async def main():
-    """Menjalankan server WebSocket dan pembaca serial secara bersamaan."""
-    print(f"🚀 Menjalankan server jembatan di ws://{WEBSOCKET_HOST}:{WEBSOCKET_PORT}")
+# Setup server Flask
+app = Flask(__name__)
+CORS(app) # Mengizinkan koneksi dari website Vercel
+
+@app.route('/get_latest_uid')
+def get_latest_uid():
+    """Endpoint yang akan ditanya oleh browser."""
+    global latest_uid, last_read_time
+    # Hanya kirim UID jika baru dibaca dalam 2 detik terakhir
+    # Ini mencegah browser mendapatkan UID yang sama berulang kali
+    if latest_uid and (time.time() - last_read_time < 2):
+        uid_to_send = latest_uid
+        latest_uid = None # Reset setelah dikirim
+        return jsonify({"uid": uid_to_send})
+    return jsonify({"uid": None}) # Kirim null jika tidak ada UID baru
+
+if __name__ == '__main__':
+    # Jalankan pembaca serial di thread terpisah
+    serial_thread = threading.Thread(target=read_from_arduino, daemon=True)
+    serial_thread.start()
     
-    # Menjalankan server WebSocket dan pembaca serial sebagai dua tugas terpisah
-    server = websockets.serve(register, WEBSOCKET_HOST, WEBSOCKET_PORT)
-    serial_task = asyncio.create_task(serial_reader())
-
-    await asyncio.gather(server, serial_task)
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\nProgram dihentikan.")
-    except OSError as e:
-        if e.winerror == 10048:
-             print("\nERROR: Port 8765 sudah digunakan oleh program lain. Tutup program tersebut dan coba lagi.")
-        else:
-             print(f"\nTerjadi OS Error: {e}")
+    # Jalankan server web Flask di port 5000
+    print("🚀 Menjalankan server jembatan HTTP di http://localhost:5000")
+    app.run(host='0.0.0.0', port=5000)

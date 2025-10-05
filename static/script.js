@@ -1,6 +1,5 @@
-// ============== SCRIPT.JS VERSI FINAL ==============
 document.addEventListener('DOMContentLoaded', () => {
-    // Definisi semua elemen (tidak berubah)
+    // --- 1. Mengambil semua elemen HTML yang dibutuhkan ---
     const mainContent = document.getElementById('main-content');
     const verificationContent = document.getElementById('verification-content');
     const statusMessage = document.getElementById('status-message');
@@ -11,51 +10,43 @@ document.addEventListener('DOMContentLoaded', () => {
     const canvasElement = document.getElementById('canvas');
     const captureBtn = document.getElementById('capture-btn');
 
-    let currentRfid = null;
-    let stream = null;
-    
-    function connectWebSocket() {
-        console.log("🔌 Mencoba terhubung ke program jembatan di ws://localhost:8765...");
-        const ws = new WebSocket('ws://localhost:8765');
+    // --- 2. Variabel untuk mengontrol proses polling ---
+    let isPolling = true; // Status apakah browser sedang 'bertanya'
+    let lastUid = null;   // Menyimpan UID terakhir yang diproses
 
-        ws.onopen = function() {
-            console.log("✅ KONEKSI BERHASIL! Menunggu UID dari Arduino...");
-            updateStatus("Alat pembaca terhubung. Silakan tempelkan kartu RFID Anda.", "success");
-        };
+    // --- 3. Fungsi Polling: Bertanya ke server jembatan setiap 2 detik ---
+    async function pollForUid() {
+        // Hanya berjalan jika tidak ada sesi absensi yang aktif
+        if (!isPolling) return;
 
-        ws.onmessage = function(event) {
-            const rfid = event.data;
-            // Pastikan data yang diterima adalah UID yang valid (bukan string kosong atau aneh)
-            if (rfid && rfid.length > 4) {
-                console.log(`💳 UID DITERIMA DI BROWSER: ${rfid}`);
-                if (!currentRfid) { 
-                    handleRfidTap(rfid);
-                } else {
-                    console.log("Sesi absensi lain sedang berjalan, UID diabaikan.");
-                }
-            } else {
-                console.warn(`Data tidak valid diterima dari jembatan: '${rfid}'`);
+        try {
+            // Bertanya ke server jembatan HTTP di localhost port 5000
+            const response = await fetch('http://localhost:5000/get_latest_uid');
+            const data = await response.json();
+
+            // Jika server jembatan mengirim UID yang baru
+            if (data && data.uid && data.uid !== lastUid) {
+                console.log(`💳 UID DITERIMA DARI JEMBATAN HTTP: ${data.uid}`);
+                lastUid = data.uid;
+                isPolling = false; // Hentikan polling sementara
+                handleRfidTap(data.uid); // Mulai proses absensi
             }
-        };
-
-        ws.onclose = function() {
-            console.error("🔴 KONEKSI TERPUTUS! Mencoba menghubungkan kembali dalam 5 detik...");
-            updateStatus("Koneksi ke alat pembaca terputus! Pastikan bridge.py berjalan.", "error");
-            // Coba hubungkan kembali setelah 5 detik
-            setTimeout(connectWebSocket, 5000); 
-        };
-        
-        ws.onerror = function(error) {
-            console.error("❌ Terjadi Error pada WebSocket:", error);
-            // onclose akan otomatis terpanggil setelah onerror, jadi tidak perlu pesan ganda
-        };
+        } catch (error) {
+            // Error ini akan muncul jika bridge_http.py tidak berjalan
+            console.error("Gagal terhubung ke jembatan HTTP. Pastikan bridge_http.py berjalan.");
+            updateStatus("Gagal terhubung ke alat pembaca. Jalankan program jembatan di komputer Anda.", "error");
+            isPolling = false; // Hentikan polling jika terjadi error
+        }
     }
 
-    // Mulai koneksi WebSocket saat halaman dimuat
-    connectWebSocket();
+    // --- 4. Memulai proses polling saat halaman dimuat ---
+    updateStatus("Menghubungkan ke alat pembaca...", "info");
+    // Atur browser untuk menjalankan fungsi pollForUid setiap 2000 milidetik (2 detik)
+    setInterval(pollForUid, 2000);
 
-    // Semua fungsi lain (handleRfidTap, displayVerificationUI, startWebcam, dll)
-    // tetap sama persis seperti sebelumnya. Tidak perlu diubah.
+    // --- 5. Semua fungsi lainnya (Tidak ada yang berubah dari sebelumnya) ---
+
+    // Fungsi untuk memproses RFID setelah diterima
     async function handleRfidTap(rfid) {
         currentRfid = rfid;
         updateStatus('Mencari data karyawan...', 'loading');
@@ -77,6 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Fungsi untuk menampilkan UI verifikasi & kamera
     async function displayVerificationUI(employee) {
         mainContent.classList.add('hidden');
         verificationContent.classList.remove('hidden');
@@ -87,6 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await startWebcam();
     }
 
+    // Fungsi untuk menyalakan webcam
     async function startWebcam() {
         try {
             if (stream) stream.getTracks().forEach(track => track.stop());
@@ -100,6 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    // Event listener untuk tombol ambil foto
     captureBtn.addEventListener('click', async () => {
         captureBtn.disabled = true;
         updateStatus('Memproses verifikasi wajah...', 'loading');
@@ -126,16 +120,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 'image/jpeg');
     });
 
+    // Fungsi untuk menampilkan pesan status
     function updateStatus(message, type) {
         statusMessage.textContent = message;
         statusMessage.className = type;
     }
 
+    // Fungsi untuk mereset UI ke tampilan awal
     function resetUI() {
         if (stream) stream.getTracks().forEach(track => track.stop());
         mainContent.classList.remove('hidden');
         verificationContent.classList.add('hidden');
         currentRfid = null;
         updateStatus("Silakan tempelkan kartu RFID Anda.", "info");
+        
+        // --- PENTING: Mulai polling lagi setelah sesi selesai ---
+        isPolling = true; 
+        lastUid = null;
     }
 });
