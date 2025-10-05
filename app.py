@@ -75,7 +75,7 @@ def register_employee():
         supabase.storage.from_('employee_photos').upload(file_path_in_storage, photo.read(), {"content-type": photo.mimetype})
         
         # Dapatkan URL publik dari foto yang diunggah
-        public_url_data = supabase.storage.from_('employee_assets').get_public_url(file_path_in_storage)
+        public_url_data = supabase.storage.from_('employee_photos').get_public_url(file_path_in_storage)
         image_url = public_url_data
 
         # Simpan data karyawan ke tabel 'employees'
