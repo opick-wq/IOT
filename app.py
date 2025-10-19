@@ -19,7 +19,7 @@ HUGGING_FACE_KEY = os.environ.get("HUGGING_FACE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- MODEL AI YANG BENAR UNTUK FITUR EKSTRAKSI GAMBAR (EMBEDDING) ---
-HF_API_URL = "https://api-inference.huggingface.co/models/sentence-transformers/clip-ViT-B-32"
+HF_API_URL = "https://api-inference.huggingface.co/models/openai/clip-vit-base-patch32"
 HF_HEADERS = {"Authorization": f"Bearer {HUGGING_FACE_KEY}"}
 
 
@@ -153,3 +153,16 @@ def verify_and_record():
     except Exception as e:
         print(f"Error saat verifikasi: {e}")
         return jsonify({"error": str(e)}), 500
+    
+def get_image_embedding(image_data: bytes, content_type: str):
+    """Mengirim data gambar (bytes) ke Hugging Face untuk mendapatkan fitur embedding."""
+    request_headers = HF_HEADERS.copy()
+    request_headers["Content-Type"] = content_type
+
+    response = requests.post(HF_API_URL, headers=request_headers, data=image_data)
+
+    if response.status_code != 200:
+        print(f"💥 Hugging Face API Error {response.status_code}: {response.text}")
+        raise Exception(f"Hugging Face API error {response.status_code}: {response.text}")
+    
+    return response.json()[0]
