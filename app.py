@@ -17,7 +17,7 @@ HUGGING_FACE_KEY = os.environ.get("HUGGING_FACE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Ganti URL model di sini jika nanti memilih model lain
-HF_API_URL = "https://api-inference.huggingface.co/models/facebook/dinov3-vitb16-pretrain-lvd1689m"
+HF_API_URL = "https://api-inference.huggingface.co/models/radames/blip_image_embeddings"
 HF_HEADERS = {
     "Authorization": f"Bearer {HUGGING_FACE_KEY}"
 }
