@@ -19,7 +19,7 @@ HUGGING_FACE_KEY = os.environ.get("HUGGING_FACE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- MODEL AI YANG BENAR UNTUK FITUR EKSTRAKSI GAMBAR (EMBEDDING) ---
-HF_API_URL = "https://api-inference.huggingface.co/models/radames/blip_image_embeddings"
+HF_API_URL = "https://api-inference.huggingface.co/models/google/vit-base-patch16-224"
 HF_HEADERS = {"Authorization": f"Bearer {HUGGING_FACE_KEY}"}
 
 
