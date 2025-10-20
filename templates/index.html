@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistem Absensi Karyawan</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- TAMBAHKAN DUA BARIS SCRIPT DI BAWAH INI -->
+    <script src="{{ url_for('static', filename='face-api.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </head>
 <body>
     <div class="container">
@@ -12,15 +15,12 @@
             <h1>Sistem Absensi Cerdas</h1>
             <p>Silakan Lakukan Absensi</p>
         </header>
-
         <main>
             <div id="main-content">
                 <div class="scanner-placeholder">
-                    <p>Menunggu Kartu...</p>
-                    <small>Gunakan alat pembaca RFID Anda, lalu ketik UID yang muncul di Serial Monitor ke halaman ini dan tekan Enter.</small>
+                    <p id="initial-message">Memuat model AI, harap tunggu...</p>
                 </div>
             </div>
-            
             <div id="verification-content" class="hidden">
                 <div class="profile-card">
                     <img id="stored-photo" src="" alt="Foto Karyawan">
@@ -30,11 +30,10 @@
                 <div class="camera-card">
                     <video id="webcam" autoplay playsinline></video>
                     <canvas id="canvas" class="hidden"></canvas>
-                    <button id="capture-btn">Ambil Foto & Catat Absensi</button>
+                    <button id="capture-btn" disabled>Ambil Foto & Verifikasi</button>
                 </div>
             </div>
         </main>
-        
         <footer>
             <div id="status-message"></div>
             <div class="navigation-links">
@@ -43,7 +42,5 @@
             </div>
         </footer>
     </div>
-
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
