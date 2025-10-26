@@ -141,11 +141,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const similarity = 1 - distance;
             console.log(`✨ Jarak Wajah: ${distance}, Kemiripan: ${similarity}`);
 
-            const SIMILARITY_THRESHOLD = 0.5; // Ambang batas (0.6 adalah standar yang baik)
+            const SIMILARITY_THRESHOLD = 0.6; // Ambang batas (0.6 adalah standar yang baik)
             if (distance > SIMILARITY_THRESHOLD) {
                 throw new Error(`Wajah tidak cocok! (Jarak: ${distance.toFixed(2)})`);
             }
-
+//njjb
             // --- JIKA COCOK, KIRIM DATA KE SERVER UNTUK DICATAT ---
             updateStatus('Wajah cocok! Mencatat absensi...', 'success');
             const response = await fetch('/api/record-attendance', {
