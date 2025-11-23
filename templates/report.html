@@ -105,20 +105,20 @@
 
     <!-- DATA RAW DARI FLASK (Disembunyikan untuk diproses JS) -->
     <script>
+        // Mengubah data dari Jinja2 ke format JSON JavaScript
         const rawData = [
             {% for record in records %}
             {
-                id: {{ record.id | default(0) }},
-                name: {{ record.employees.name | tojson }},
-                status: {{ record.employees.status | tojson }},
-                timestamp: {{ record.timestamp | tojson }},
-                type: {{ record.type | tojson }},
-                employee_id: {{ record.employee_id | default(0) }}
-            }{% if not loop.last %},{% endif %}
+                id: {{ record.id | default(0) }}, // Asumsi ada kolom ID di record
+                name: "{{ record.employees.name }}",
+                status: "{{ record.employees.status }}",
+                timestamp: "{{ record.timestamp }}",
+                type: "{{ record.type }}",
+                employee_id: {{ record.employee_id | default(0) }} // Butuh ID karyawan utk relasi
+            },
             {% endfor %}
         ];
     </script>
-
 
     <script>
         // --- JAVASCRIPT LOGIC ---
