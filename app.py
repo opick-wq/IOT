@@ -1,85 +1,79 @@
 import os
+import requests
 from flask import Flask, render_template, request, jsonify
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from datetime import datetime
 
-# Muat environment variables (untuk development lokal)
+# Muat environment variables
 load_dotenv()
 
 app = Flask(__name__)
 
-# --- KONFIGURASI APLIKASI ---
+# --- KONFIGURASI SUPABASE ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-# Pastikan kredensial Supabase ada
 if not all([SUPABASE_URL, SUPABASE_KEY]):
-    print("WARNING: SUPABASE_URL atau SUPABASE_KEY tidak ditemukan.")
+    print("WARNING: Supabase credentials not found.")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- HALAMAN WEB (ROUTES) ---
+# --- URL API TEMAN ANDA ---
+FRIEND_API_URL = "https://yudhriz-api-absensi.hf.space/verify"
 
+# --- HALAMAN WEB ---
 @app.route('/')
 def index():
-    """Halaman utama untuk absensi."""
     return render_template('index.html')
 
 @app.route('/register')
 def register_page():
-    """Halaman untuk mendaftarkan karyawan baru."""
     return render_template('register.html')
 
 @app.route('/report')
 def report_page():
-    """Halaman untuk melihat laporan absensi."""
     try:
         response = supabase.table('attendance_records').select(
             'timestamp, type, employees(name, status)'
         ).order('timestamp', desc=True).execute()
         return render_template('report.html', records=response.data)
     except Exception as e:
-        print(f"Error saat mengambil data laporan: {e}")
-        return render_template('report.html', records=[], error="Gagal memuat data laporan.")
+        return render_template('report.html', records=[], error="Gagal memuat data.")
 
 # --- API ENDPOINTS ---
 
 @app.route('/api/register-employee', methods=['POST'])
 def register_employee():
-    """API untuk menyimpan data karyawan baru."""
+    """Pendaftaran tetap menggunakan Supabase untuk data karyawan"""
     try:
-        # (Logika pendaftaran tidak berubah)
         name = request.form['name']
         status = request.form['status']
         rfid_uid = request.form['rfid_uid']
         photo = request.files['photo']
 
         file_extension = os.path.splitext(photo.filename)[1]
-        file_path_in_storage = f"photos/{rfid_uid}{file_extension}"
+        file_path = f"photos/{rfid_uid}{file_extension}"
         
         photo.seek(0)
-        # Pastikan nama bucket di sini sesuai dengan yang ada di Supabase Anda
         supabase.storage.from_('employee_photos').upload(
-            file_path_in_storage, photo.read(), {"content-type": photo.mimetype}
+            file_path, photo.read(), {"content-type": photo.mimetype}
         )
-        
-        image_url = supabase.storage.from_('employee_photos').get_public_url(file_path_in_storage)
+        image_url = supabase.storage.from_('employee_photos').get_public_url(file_path)
 
-        employee_data = {'name': name, 'status': status, 'rfid_uid': rfid_uid, 'image_url': image_url}
-        supabase.table('employees').insert(employee_data).execute()
+        data = {'name': name, 'status': status, 'rfid_uid': rfid_uid, 'image_url': image_url}
+        supabase.table('employees').insert(data).execute()
 
         return jsonify({"success": True, "message": f"{name} berhasil didaftarkan!"}), 201
     except Exception as e:
-        print(f"Error saat pendaftaran: {e}")
-        return jsonify({"error": f"Terjadi kesalahan: {e}"}), 500
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/get-employee-data', methods=['POST'])
 def get_employee_data():
-    """API untuk memberikan data karyawan ke browser."""
+    """Mengambil data karyawan untuk ditampilkan di browser sebelum cek wajah"""
+    rfid_uid = request.get_json().get('rfid')
     try:
-        rfid_uid = request.get_json().get('rfid')
-        response = supabase.table('employees').select('name, status, image_url, rfid_uid').eq('rfid_uid', rfid_uid).single().execute()
+        response = supabase.table('employees').select('*').eq('rfid_uid', rfid_uid).single().execute()
         if not response.data:
             return jsonify({"error": "Karyawan tidak ditemukan"}), 404
         return jsonify(response.data), 200
@@ -88,28 +82,63 @@ def get_employee_data():
 
 @app.route('/api/record-attendance', methods=['POST'])
 def record_attendance():
-    """API BARU: Hanya untuk mencatat absensi setelah verifikasi berhasil di browser."""
+    """
+    API ini menerima foto dari browser, 
+    mengirimnya ke API teman Anda, 
+    dan jika cocok baru mencatat ke Supabase.
+    """
     try:
-        rfid_uid = request.get_json().get('rfid')
+        rfid_uid = request.form.get('rfid')
+        live_image = request.files.get('live_image')
 
-        # Dapatkan ID karyawan dari rfid_uid
-        employee_response = supabase.table('employees').select('id, name').eq('rfid_uid', rfid_uid).single().execute()
-        employee = employee_response.data
-        if not employee:
-            return jsonify({"error": "Karyawan tidak ditemukan saat akan mencatat absensi."}), 404
+        if not rfid_uid or not live_image:
+            return jsonify({"error": "Data tidak lengkap"}), 400
 
-        # Logika check-in/check-out (tidak berubah)
-        today_str = datetime.now().strftime('%Y-%m-%d')
-        records_response = supabase.table('attendance_records').select('id').eq('employee_id', employee['id']).filter('timestamp', 'gte', f"{today_str}T00:00:00").execute()
-        attendance_type = 'check_out' if records_response.data else 'check_in'
+        # 1. Cari Data Karyawan di Database sendiri dulu
+        emp_response = supabase.table('employees').select('id, name').eq('rfid_uid', rfid_uid).single().execute()
+        if not emp_response.data:
+             return jsonify({"error": "ID Karyawan tidak ditemukan di database lokal."}), 404
+        
+        employee = emp_response.data
 
-        attendance_data = { 'employee_id': employee['id'], 'type': attendance_type }
-        supabase.table('attendance_records').insert(attendance_data).execute()
+        # 2. KIRIM KE API TEMAN ANDA (Verifikasi Wajah)
+        print(f"🚀 Mengirim foto {rfid_uid} ke API Yudha...")
+        
+        # Siapkan file dan data sesuai format teman Anda
+        files = {'file': (live_image.filename, live_image.stream, live_image.mimetype)}
+        data = {'user_id': rfid_uid} # Menggunakan RFID sebagai user_id
+
+        # Request ke API teman
+        response = requests.post(FRIEND_API_URL, files=files, data=data)
+
+        print(f"Status API Teman: {response.status_code}")
+        print(f"Respon API Teman: {response.text}")
+
+        # Cek hasil dari API teman
+        # Asumsi: API teman mengembalikan status 200 jika cocok, dan JSON result
+        if response.status_code != 200:
+             return jsonify({"error": "Wajah tidak cocok atau API Error!"}), 401
+        
+        # Jika sampai sini, berarti verifikasi BERHASIL.
+        # 3. Catat Absensi ke Supabase
+        today = datetime.now().strftime('%Y-%m-%d')
+        rec_response = supabase.table('attendance_records').select('id').eq('employee_id', employee['id']).filter('timestamp', 'gte', f"{today}T00:00:00").execute()
+        
+        att_type = 'check_out' if rec_response.data else 'check_in'
+        
+        supabase.table('attendance_records').insert({
+            'employee_id': employee['id'], 
+            'type': att_type
+        }).execute()
 
         return jsonify({
             "success": True, 
-            "message": f"Absensi '{attendance_type}' untuk {employee['name']} berhasil dicatat."
+            "message": f"Verifikasi Sukses! Absensi '{att_type}' untuk {employee['name']} tercatat."
         }), 200
+
     except Exception as e:
-        print(f"Error saat mencatat absensi: {e}")
+        print(f"Error: {e}")
         return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
