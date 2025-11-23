@@ -81,7 +81,7 @@ def register_page():
 def report_page():
     try:
         response = supabase.table('attendance_records').select(
-            'timestamp, type, employees(name, status)'
+            'id, employee_id, timestamp, type, employees(name, status)'
         ).order('timestamp', desc=True).execute()
         return render_template('report.html', records=response.data)
     except Exception as e:

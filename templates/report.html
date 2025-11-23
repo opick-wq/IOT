@@ -22,8 +22,9 @@
                     <input type="text" id="searchName" placeholder="Cari Nama..." onkeyup="filterTable()">
                     <select id="filterStatus" onchange="filterTable()">
                         <option value="">Semua Status</option>
-                        <option value="Karyawan Tetap">Karyawan Tetap</option>
+                        <option value="Karyawan">Karyawan</option>
                         <option value="Magang">Magang</option>
+                        <option value="Bos">Bos</option>
                     </select>
                     <input type="date" id="filterDate" onchange="filterTable()">
                 </div>
@@ -63,6 +64,9 @@
         <footer>
             <div class="navigation-links">
                 <a href="/dashboard">Kembali ke Dashboard</a>
+            </div>
+            <div class="navigation-links">
+                <a href="/absen">Kembali ke absensi</a>
             </div>
         </footer>
     </div>
