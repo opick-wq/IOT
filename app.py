@@ -45,13 +45,14 @@ def report_page():
 
 @app.route('/api/register-employee', methods=['POST'])
 def register_employee():
-    """Pendaftaran tetap menggunakan Supabase untuk data karyawan"""
+    """API Pendaftaran Karyawan"""
     try:
         name = request.form['name']
         status = request.form['status']
         rfid_uid = request.form['rfid_uid']
         photo = request.files['photo']
 
+        # Simpan foto ke Supabase Storage
         file_extension = os.path.splitext(photo.filename)[1]
         file_path = f"photos/{rfid_uid}{file_extension}"
         
@@ -61,16 +62,18 @@ def register_employee():
         )
         image_url = supabase.storage.from_('employee_photos').get_public_url(file_path)
 
+        # Simpan data ke tabel employees
         data = {'name': name, 'status': status, 'rfid_uid': rfid_uid, 'image_url': image_url}
         supabase.table('employees').insert(data).execute()
 
         return jsonify({"success": True, "message": f"{name} berhasil didaftarkan!"}), 201
     except Exception as e:
+        print(f"Error Pendaftaran: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/get-employee-data', methods=['POST'])
 def get_employee_data():
-    """Mengambil data karyawan untuk ditampilkan di browser sebelum cek wajah"""
+    """Mengambil data karyawan untuk ditampilkan sebelum verifikasi"""
     rfid_uid = request.get_json().get('rfid')
     try:
         response = supabase.table('employees').select('*').eq('rfid_uid', rfid_uid).single().execute()
@@ -83,9 +86,7 @@ def get_employee_data():
 @app.route('/api/record-attendance', methods=['POST'])
 def record_attendance():
     """
-    API ini menerima foto dari browser, 
-    mengirimnya ke API teman Anda, 
-    dan jika cocok baru mencatat ke Supabase.
+    API Inti: Menerima foto -> Kirim ke API Teman -> Catat Absensi
     """
     try:
         rfid_uid = request.form.get('rfid')
@@ -94,33 +95,44 @@ def record_attendance():
         if not rfid_uid or not live_image:
             return jsonify({"error": "Data tidak lengkap"}), 400
 
-        # 1. Cari Data Karyawan di Database sendiri dulu
+        # 1. Pastikan karyawan ada di database lokal
         emp_response = supabase.table('employees').select('id, name').eq('rfid_uid', rfid_uid).single().execute()
         if not emp_response.data:
-             return jsonify({"error": "ID Karyawan tidak ditemukan di database lokal."}), 404
+             return jsonify({"error": "ID Karyawan tidak ditemukan."}), 404
         
         employee = emp_response.data
 
-        # 2. KIRIM KE API TEMAN ANDA (Verifikasi Wajah)
+        # 2. SIAPKAN REQUEST KE API TEMAN
         print(f"🚀 Mengirim foto {rfid_uid} ke API Yudha...")
         
-        # Siapkan file dan data sesuai format teman Anda
+        # Format file sesuai permintaan `requests`
         files = {'file': (live_image.filename, live_image.stream, live_image.mimetype)}
-        data = {'user_id': rfid_uid} # Menggunakan RFID sebagai user_id
+        data = {'user_id': rfid_uid}
 
-        # Request ke API teman
-        response = requests.post(FRIEND_API_URL, files=files, data=data)
+        # 3. KIRIM DAN TERIMA HASIL
+        try:
+            api_response = requests.post(FRIEND_API_URL, files=files, data=data, timeout=30) # Timeout 30 detik
+            api_result = {}
+            try:
+                api_result = api_response.json()
+            except:
+                pass # Jika respon bukan JSON
+        except Exception as api_err:
+            print(f"API Error: {api_err}")
+            return jsonify({"error": "Gagal menghubungi server AI verifikasi."}), 502
 
-        print(f"Status API Teman: {response.status_code}")
-        print(f"Respon API Teman: {response.text}")
+        print(f"📡 Respon API Teman: {api_result}")
 
-        # Cek hasil dari API teman
-        # Asumsi: API teman mengembalikan status 200 jika cocok, dan JSON result
-        if response.status_code != 200:
-             return jsonify({"error": "Wajah tidak cocok atau API Error!"}), 401
+        # 4. CEK HASIL VERIFIKASI
+        # Asumsi: API teman mengembalikan status 200 jika VERIFIED
+        if api_response.status_code != 200:
+             # Kembalikan error beserta detail jarak (jika ada) untuk debugging di console browser
+             return jsonify({
+                 "error": "Wajah tidak cocok", 
+                 "details": api_result 
+             }), 401
         
-        # Jika sampai sini, berarti verifikasi BERHASIL.
-        # 3. Catat Absensi ke Supabase
+        # 5. JIKA SUKSES, CATAT ABSENSI
         today = datetime.now().strftime('%Y-%m-%d')
         rec_response = supabase.table('attendance_records').select('id').eq('employee_id', employee['id']).filter('timestamp', 'gte', f"{today}T00:00:00").execute()
         
@@ -131,13 +143,15 @@ def record_attendance():
             'type': att_type
         }).execute()
 
+        # 6. KIRIM RESPON SUKSES KE BROWSER (Termasuk detail jarak)
         return jsonify({
             "success": True, 
-            "message": f"Verifikasi Sukses! Absensi '{att_type}' untuk {employee['name']} tercatat."
+            "message": f"Absensi '{att_type}' Berhasil!",
+            "details": api_result # Kirim balik data dari API teman agar bisa dilihat di console
         }), 200
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Critical Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':

@@ -49,7 +49,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(result.error);
 
             currentEmployee = result;
-            currentEmployee.rfid_uid = rfid; // Pastikan UID tersimpan
+            // Pastikan UID tersimpan di objek employee jika API tidak mengembalikannya
+            if (!currentEmployee.rfid_uid) currentEmployee.rfid_uid = rfid; 
+            
             displayCameraUI(result);
         } catch (error) {
             updateStatus(error.message, 'error');
@@ -103,6 +105,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 
                 const result = await response.json();
+
+                // LOG RESPON UNTUK DEBUGGING
+                console.log("========================================");
+                console.log("📡 RESPON DARI SERVER:");
+                console.log("Status:", response.status);
+                console.log("Pesan:", result.message || result.error);
+                if (result.details) {
+                    console.log("Detail dari API AI:", result.details);
+                    // Log jarak jika ada
+                    if (result.details.distance !== undefined) {
+                        console.log(`📊 Jarak Wajah: ${result.details.distance}`);
+                    }
+                    if (result.details.similarity !== undefined) {
+                        console.log(`📊 Kemiripan: ${result.details.similarity}`);
+                    }
+                }
+                console.log("========================================");
+
+
                 if (!response.ok) throw new Error(result.error || 'Verifikasi Gagal');
 
                 updateStatus(result.message, 'success');
