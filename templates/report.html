@@ -5,9 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manajemen Absensi</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <!-- FontAwesome untuk Ikon -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- SheetJS untuk Export Excel -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -18,7 +16,7 @@
         </header>
 
         <main>
-            <!-- TOOLBAR: Filter & Action -->
+            <!-- TOOLBAR -->
             <div class="toolbar">
                 <div class="filters">
                     <input type="text" id="searchName" placeholder="Cari Nama..." onkeyup="filterTable()">
@@ -48,9 +46,7 @@
                             <th class="no-print">Aksi</th>
                         </tr>
                     </thead>
-                    <tbody id="tableBody">
-                        <!-- Data akan di-render oleh JavaScript -->
-                    </tbody>
+                    <tbody id="tableBody"></tbody>
                 </table>
             </div>
 
@@ -71,15 +67,14 @@
         </footer>
     </div>
 
-    <!-- MODAL (Pop-up Form) -->
-    <div id="dataModal" class="modal hidden">
+    <!-- MODAL (Perhatikan: class 'hidden' dihapus) -->
+    <div id="dataModal" class="modal">
         <div class="modal-content">
             <span class="close" onclick="closeModal()">&times;</span>
             <h2 id="modalTitle">Tambah Data Absensi</h2>
             <form id="attendanceForm">
                 <input type="hidden" id="recordId">
                 
-                <!-- Dropdown Karyawan (Hanya aktif saat Add) -->
                 <div class="form-group" id="employeeField">
                     <label>Nama Karyawan</label>
                     <select id="employeeSelect" required></select>
@@ -103,31 +98,26 @@
         </div>
     </div>
 
-    <!-- DATA RAW DARI FLASK (Disembunyikan untuk diproses JS) -->
     <script>
-        // Mengubah data dari Jinja2 ke format JSON JavaScript
         const rawData = [
             {% for record in records %}
             {
-                id: {{ record.id | default(0) }}, // Asumsi ada kolom ID di record
+                id: {{ record.id | default(0) }},
                 name: "{{ record.employees.name }}",
                 status: "{{ record.employees.status }}",
                 timestamp: "{{ record.timestamp }}",
                 type: "{{ record.type }}",
-                employee_id: {{ record.employee_id | default(0) }} // Butuh ID karyawan utk relasi
+                employee_id: {{ record.employee_id | default(0) }}
             },
             {% endfor %}
         ];
     </script>
 
     <script>
-        // --- JAVASCRIPT LOGIC ---
-        
         let currentPage = 1;
         const rowsPerPage = 10;
-        let filteredData = [...rawData]; // Data hasil filter
+        let filteredData = [...rawData];
 
-        // 1. Format Tanggal & Waktu (Fixing ISO Format)
         function formatDateTime(isoString) {
             const date = new Date(isoString);
             return date.toLocaleString('id-ID', { 
@@ -136,11 +126,9 @@
             });
         }
 
-        // 2. Render Tabel dengan Pagination
         function renderTable() {
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
-
             const start = (currentPage - 1) * rowsPerPage;
             const end = start + rowsPerPage;
             const pageData = filteredData.slice(start, end);
@@ -167,13 +155,11 @@
                 tbody.innerHTML += row;
             });
 
-            // Update Info Pagination
             document.getElementById('pageInfo').innerText = `Menampilkan ${Math.min(start + 1, filteredData.length)}-${Math.min(end, filteredData.length)} dari ${filteredData.length} data`;
             document.getElementById('btnPrev').disabled = currentPage === 1;
             document.getElementById('btnNext').disabled = end >= filteredData.length;
         }
 
-        // 3. Filter Data (Search, Status, Date)
         function filterTable() {
             const search = document.getElementById('searchName').value.toLowerCase();
             const status = document.getElementById('filterStatus').value;
@@ -182,45 +168,37 @@
             filteredData = rawData.filter(item => {
                 const matchName = item.name.toLowerCase().includes(search);
                 const matchStatus = status === '' || item.status === status;
-                
-                // Filter Tanggal (item.timestamp format ISO, ambil bagian YYYY-MM-DD)
                 const itemDate = item.timestamp.split('T')[0]; 
                 const matchDate = date === '' || itemDate === date;
-
                 return matchName && matchStatus && matchDate;
             });
 
-            currentPage = 1; // Reset ke halaman 1
+            currentPage = 1;
             renderTable();
         }
 
         function prevPage() { if (currentPage > 1) { currentPage--; renderTable(); } }
         function nextPage() { if ((currentPage * rowsPerPage) < filteredData.length) { currentPage++; renderTable(); } }
 
-        // 4. Export Excel
         function exportToExcel() {
-            // Siapkan data bersih untuk export
             const exportData = filteredData.map(item => ({
                 "Nama Karyawan": item.name,
                 "Status": item.status,
                 "Waktu": formatDateTime(item.timestamp),
                 "Tipe": item.type === 'check_in' ? 'Masuk' : 'Pulang'
             }));
-
             const ws = XLSX.utils.json_to_sheet(exportData);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Laporan Absensi");
             XLSX.writeFile(wb, "Laporan_Absensi.xlsx");
         }
 
-        // 5. Modal & CRUD Operations
         const modal = document.getElementById('dataModal');
         let isEditMode = false;
 
         async function loadEmployees() {
             const select = document.getElementById('employeeSelect');
-            if (select.options.length > 0) return; // Jangan load kalau sudah ada
-            
+            if (select.options.length > 0) return;
             const res = await fetch('/api/employees-list');
             const employees = await res.json();
             employees.forEach(emp => {
@@ -231,8 +209,10 @@
             });
         }
 
+        // --- PERBAIKAN LOGIKA MODAL DI SINI ---
         async function openModal(mode, index = null) {
-            modal.classList.remove('hidden');
+            // Gunakan class 'active' untuk memunculkan modal
+            modal.classList.add('active'); 
             await loadEmployees();
 
             if (mode === 'edit') {
@@ -240,13 +220,11 @@
                 const item = filteredData[index];
                 document.getElementById('modalTitle').innerText = "Edit Absensi";
                 document.getElementById('recordId').value = item.id;
-                document.getElementById('employeeField').style.display = 'none'; // Tidak bisa ganti orang saat edit
+                document.getElementById('employeeField').style.display = 'none';
                 
-                // Konversi ISO time ke format input datetime-local (YYYY-MM-DDTHH:MM)
                 const localDate = new Date(item.timestamp);
                 localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
                 document.getElementById('timestampInput').value = localDate.toISOString().slice(0, 16);
-                
                 document.getElementById('typeInput').value = item.type;
             } else {
                 isEditMode = false;
@@ -258,21 +236,27 @@
 
         function openEditModal(index) { openModal('edit', index); }
 
-        function closeModal() { modal.classList.add('hidden'); }
+        function closeModal() { 
+            // Hapus class 'active' untuk menyembunyikan modal
+            modal.classList.remove('active'); 
+        }
 
-        // Handle Submit Form (Add/Edit)
+        // Klik di luar modal untuk menutup
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+
         document.getElementById('attendanceForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const id = document.getElementById('recordId').value;
             const timestamp = document.getElementById('timestampInput').value;
             const type = document.getElementById('typeInput').value;
             const employeeId = document.getElementById('employeeSelect').value;
-
-            let url, method, body;
-
-            // Format timestamp ke format ISO standar agar Supabase terima
             const isoTimestamp = new Date(timestamp).toISOString();
 
+            let url, method, body;
             if (isEditMode) {
                 url = `/api/attendance/${id}`;
                 method = 'PUT';
@@ -292,7 +276,7 @@
                 const result = await res.json();
                 if (res.ok) {
                     alert(result.message);
-                    location.reload(); // Refresh untuk update data
+                    location.reload();
                 } else {
                     alert("Gagal: " + result.error);
                 }
@@ -301,7 +285,6 @@
             }
         });
 
-        // Handle Delete
         async function deleteRecord(id) {
             if (confirm("Yakin ingin menghapus data absensi ini?")) {
                 try {
@@ -318,9 +301,7 @@
             }
         }
 
-        // Inisialisasi
         renderTable();
-
     </script>
 </body>
 </html>
