@@ -66,6 +66,7 @@ def dashboard():
     return render_template('dashboard.html')
 
 @app.route('/absen')
+@login_required
 def absen_page():
     """Halaman Publik untuk Absensi Karyawan."""
     return render_template('absen.html')
@@ -120,6 +121,67 @@ def get_employee_data():
         response = supabase.table('employees').select('*').eq('rfid_uid', rfid_uid).single().execute()
         if not response.data:
             return jsonify({"error": "Karyawan tidak ditemukan"}), 404
+        return jsonify(response.data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/attendance/manual', methods=['POST'])
+@login_required
+def manual_attendance():
+    """Menambahkan data absensi secara manual."""
+    try:
+        data = request.get_json()
+        # Cari ID karyawan berdasarkan Nama (atau bisa dropdown ID di frontend)
+        # Untuk simpelnya, kita asumsikan frontend kirim employee_id yang benar
+        employee_id = data.get('employee_id')
+        timestamp = data.get('timestamp') # Format: YYYY-MM-DD HH:MM:SS
+        type_ = data.get('type')
+
+        if not all([employee_id, timestamp, type_]):
+            return jsonify({"error": "Data tidak lengkap"}), 400
+
+        supabase.table('attendance_records').insert({
+            'employee_id': employee_id,
+            'timestamp': timestamp,
+            'type': type_
+        }).execute()
+
+        return jsonify({"success": True, "message": "Data berhasil ditambahkan"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/attendance/<int:record_id>', methods=['PUT'])
+@login_required
+def update_attendance(record_id):
+    """Mengedit data absensi."""
+    try:
+        data = request.get_json()
+        # Kita izinkan edit waktu dan tipe
+        update_data = {}
+        if 'timestamp' in data: update_data['timestamp'] = data['timestamp']
+        if 'type' in data: update_data['type'] = data['type']
+
+        supabase.table('attendance_records').update(update_data).eq('id', record_id).execute()
+        return jsonify({"success": True, "message": "Data berhasil diupdate"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/attendance/<int:record_id>', methods=['DELETE'])
+@login_required
+def delete_attendance(record_id):
+    """Menghapus data absensi."""
+    try:
+        supabase.table('attendance_records').delete().eq('id', record_id).execute()
+        return jsonify({"success": True, "message": "Data berhasil dihapus"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Endpoint untuk mengambil daftar karyawan (untuk dropdown tambah manual)
+@app.route('/api/employees-list', methods=['GET'])
+@login_required
+def get_employees_list():
+    try:
+        response = supabase.table('employees').select('id, name').execute()
         return jsonify(response.data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

@@ -3,62 +3,324 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Laporan Absensi</title>
+    <title>Manajemen Absensi</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <style>
-        .report-table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
-        .report-table th, .report-table td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-        .report-table th { background-color: #f2f2f2; }
-        .print-btn { margin-top: 1rem; }
-        @media print {
-            body * { visibility: hidden; }
-            .print-area, .print-area * { visibility: visible; }
-            .print-area { position: absolute; left: 0; top: 0; width: 100%; }
-            .no-print { display: none; }
-        }
-    </style>
+    <!-- FontAwesome untuk Ikon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS untuk Export Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-    <div class="container">
+    <div class="container" style="max-width: 1200px;">
         <header>
-            <h1>Laporan Riwayat Absensi</h1>
-            <p>Berikut adalah catatan kehadiran seluruh karyawan.</p>
+            <h1><i class="fa-solid fa-clipboard-user"></i> Manajemen Absensi</h1>
+            <p>Kelola, filter, dan export data kehadiran karyawan.</p>
         </header>
 
-        <main class="print-area">
-            {% if error %}
-                <p class="error">{{ error }}</p>
-            {% endif %}
-            <table class="report-table">
-                <thead>
-                    <tr>
-                        <th>Nama Karyawan</th>
-                        <th>Status</th>
-                        <th>Waktu Absen</th>
-                        <th>Tipe</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for record in records %}
-                    <tr>
-                        <td>{{ record.employees.name or 'N/A' }}</td>
-                        <td>{{ record.employees.status or 'N/A' }}</td>
-                        <td>{{ record.timestamp }}</td>
-                        <td>{{ record.type }}</td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="4">Belum ada data absensi.</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <main>
+            <!-- TOOLBAR: Filter & Action -->
+            <div class="toolbar">
+                <div class="filters">
+                    <input type="text" id="searchName" placeholder="Cari Nama..." onkeyup="filterTable()">
+                    <select id="filterStatus" onchange="filterTable()">
+                        <option value="">Semua Status</option>
+                        <option value="Karyawan Tetap">Karyawan Tetap</option>
+                        <option value="Magang">Magang</option>
+                    </select>
+                    <input type="date" id="filterDate" onchange="filterTable()">
+                </div>
+                <div class="actions">
+                    <button onclick="openModal('add')" class="btn-add"><i class="fa-solid fa-plus"></i> Tambah Manual</button>
+                    <button onclick="exportToExcel()" class="btn-export"><i class="fa-solid fa-file-excel"></i> Export Excel</button>
+                </div>
+            </div>
+
+            <!-- TABLE -->
+            <div class="table-responsive">
+                <table class="report-table" id="attendanceTable">
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Nama Karyawan</th>
+                            <th>Status</th>
+                            <th>Tanggal & Waktu</th>
+                            <th>Tipe</th>
+                            <th class="no-print">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <!-- Data akan di-render oleh JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- PAGINATION -->
+            <div class="pagination-container">
+                <span id="pageInfo">Menampilkan 0-0 dari 0 data</span>
+                <div class="pagination-buttons">
+                    <button onclick="prevPage()" id="btnPrev">Prev</button>
+                    <button onclick="nextPage()" id="btnNext">Next</button>
+                </div>
+            </div>
         </main>
-        
+
         <footer>
-            <button onclick="window.print()" class="no-print print-btn">Cetak Laporan</button>
-            <a href="/absen" class="no-print">Kembali ke Halaman Absen</a>
+            <div class="navigation-links">
+                <a href="/dashboard">Kembali ke Dashboard</a>
+            </div>
         </footer>
     </div>
+
+    <!-- MODAL (Pop-up Form) -->
+    <div id="dataModal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h2 id="modalTitle">Tambah Data Absensi</h2>
+            <form id="attendanceForm">
+                <input type="hidden" id="recordId">
+                
+                <!-- Dropdown Karyawan (Hanya aktif saat Add) -->
+                <div class="form-group" id="employeeField">
+                    <label>Nama Karyawan</label>
+                    <select id="employeeSelect" required></select>
+                </div>
+
+                <div class="form-group">
+                    <label>Waktu Absen</label>
+                    <input type="datetime-local" id="timestampInput" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Tipe Absensi</label>
+                    <select id="typeInput" required>
+                        <option value="check_in">Check In (Masuk)</option>
+                        <option value="check_out">Check Out (Pulang)</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn-save">Simpan</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- DATA RAW DARI FLASK (Disembunyikan untuk diproses JS) -->
+    <script>
+        const rawData = [
+            {% for record in records %}
+            {
+                id: {{ record.id | default(0) }},
+                name: {{ record.employees.name | tojson }},
+                status: {{ record.employees.status | tojson }},
+                timestamp: {{ record.timestamp | tojson }},
+                type: {{ record.type | tojson }},
+                employee_id: {{ record.employee_id | default(0) }}
+            }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ];
+    </script>
+
+
+    <script>
+        // --- JAVASCRIPT LOGIC ---
+        
+        let currentPage = 1;
+        const rowsPerPage = 10;
+        let filteredData = [...rawData]; // Data hasil filter
+
+        // 1. Format Tanggal & Waktu (Fixing ISO Format)
+        function formatDateTime(isoString) {
+            const date = new Date(isoString);
+            return date.toLocaleString('id-ID', { 
+                day: '2-digit', month: 'long', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+        }
+
+        // 2. Render Tabel dengan Pagination
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            const start = (currentPage - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const pageData = filteredData.slice(start, end);
+
+            if (pageData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Tidak ada data ditemukan.</td></tr>';
+                return;
+            }
+
+            pageData.forEach((item, index) => {
+                const row = `
+                    <tr>
+                        <td>${start + index + 1}</td>
+                        <td>${item.name}</td>
+                        <td><span class="badge ${item.status === 'Karyawan Tetap' ? 'badge-blue' : 'badge-gray'}">${item.status}</span></td>
+                        <td>${formatDateTime(item.timestamp)}</td>
+                        <td><span class="badge ${item.type === 'check_in' ? 'badge-green' : 'badge-red'}">${item.type === 'check_in' ? 'Masuk' : 'Pulang'}</span></td>
+                        <td class="no-print">
+                            <button class="btn-icon btn-edit" onclick="openEditModal(${index + start})"><i class="fa-solid fa-pen"></i></button>
+                            <button class="btn-icon btn-delete" onclick="deleteRecord(${item.id})"><i class="fa-solid fa-trash"></i></button>
+                        </td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+
+            // Update Info Pagination
+            document.getElementById('pageInfo').innerText = `Menampilkan ${Math.min(start + 1, filteredData.length)}-${Math.min(end, filteredData.length)} dari ${filteredData.length} data`;
+            document.getElementById('btnPrev').disabled = currentPage === 1;
+            document.getElementById('btnNext').disabled = end >= filteredData.length;
+        }
+
+        // 3. Filter Data (Search, Status, Date)
+        function filterTable() {
+            const search = document.getElementById('searchName').value.toLowerCase();
+            const status = document.getElementById('filterStatus').value;
+            const date = document.getElementById('filterDate').value;
+
+            filteredData = rawData.filter(item => {
+                const matchName = item.name.toLowerCase().includes(search);
+                const matchStatus = status === '' || item.status === status;
+                
+                // Filter Tanggal (item.timestamp format ISO, ambil bagian YYYY-MM-DD)
+                const itemDate = item.timestamp.split('T')[0]; 
+                const matchDate = date === '' || itemDate === date;
+
+                return matchName && matchStatus && matchDate;
+            });
+
+            currentPage = 1; // Reset ke halaman 1
+            renderTable();
+        }
+
+        function prevPage() { if (currentPage > 1) { currentPage--; renderTable(); } }
+        function nextPage() { if ((currentPage * rowsPerPage) < filteredData.length) { currentPage++; renderTable(); } }
+
+        // 4. Export Excel
+        function exportToExcel() {
+            // Siapkan data bersih untuk export
+            const exportData = filteredData.map(item => ({
+                "Nama Karyawan": item.name,
+                "Status": item.status,
+                "Waktu": formatDateTime(item.timestamp),
+                "Tipe": item.type === 'check_in' ? 'Masuk' : 'Pulang'
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Laporan Absensi");
+            XLSX.writeFile(wb, "Laporan_Absensi.xlsx");
+        }
+
+        // 5. Modal & CRUD Operations
+        const modal = document.getElementById('dataModal');
+        let isEditMode = false;
+
+        async function loadEmployees() {
+            const select = document.getElementById('employeeSelect');
+            if (select.options.length > 0) return; // Jangan load kalau sudah ada
+            
+            const res = await fetch('/api/employees-list');
+            const employees = await res.json();
+            employees.forEach(emp => {
+                const option = document.createElement('option');
+                option.value = emp.id;
+                option.text = emp.name;
+                select.appendChild(option);
+            });
+        }
+
+        async function openModal(mode, index = null) {
+            modal.classList.remove('hidden');
+            await loadEmployees();
+
+            if (mode === 'edit') {
+                isEditMode = true;
+                const item = filteredData[index];
+                document.getElementById('modalTitle').innerText = "Edit Absensi";
+                document.getElementById('recordId').value = item.id;
+                document.getElementById('employeeField').style.display = 'none'; // Tidak bisa ganti orang saat edit
+                
+                // Konversi ISO time ke format input datetime-local (YYYY-MM-DDTHH:MM)
+                const localDate = new Date(item.timestamp);
+                localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
+                document.getElementById('timestampInput').value = localDate.toISOString().slice(0, 16);
+                
+                document.getElementById('typeInput').value = item.type;
+            } else {
+                isEditMode = false;
+                document.getElementById('modalTitle').innerText = "Tambah Absensi Manual";
+                document.getElementById('attendanceForm').reset();
+                document.getElementById('employeeField').style.display = 'block';
+            }
+        }
+
+        function openEditModal(index) { openModal('edit', index); }
+
+        function closeModal() { modal.classList.add('hidden'); }
+
+        // Handle Submit Form (Add/Edit)
+        document.getElementById('attendanceForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('recordId').value;
+            const timestamp = document.getElementById('timestampInput').value;
+            const type = document.getElementById('typeInput').value;
+            const employeeId = document.getElementById('employeeSelect').value;
+
+            let url, method, body;
+
+            // Format timestamp ke format ISO standar agar Supabase terima
+            const isoTimestamp = new Date(timestamp).toISOString();
+
+            if (isEditMode) {
+                url = `/api/attendance/${id}`;
+                method = 'PUT';
+                body = { timestamp: isoTimestamp, type: type };
+            } else {
+                url = `/api/attendance/manual`;
+                method = 'POST';
+                body = { employee_id: employeeId, timestamp: isoTimestamp, type: type };
+            }
+
+            try {
+                const res = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const result = await res.json();
+                if (res.ok) {
+                    alert(result.message);
+                    location.reload(); // Refresh untuk update data
+                } else {
+                    alert("Gagal: " + result.error);
+                }
+            } catch (err) {
+                alert("Terjadi kesalahan sistem.");
+            }
+        });
+
+        // Handle Delete
+        async function deleteRecord(id) {
+            if (confirm("Yakin ingin menghapus data absensi ini?")) {
+                try {
+                    const res = await fetch(`/api/attendance/${id}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        alert("Data terhapus");
+                        location.reload();
+                    } else {
+                        alert("Gagal menghapus");
+                    }
+                } catch (err) {
+                    alert("Error koneksi");
+                }
+            }
+        }
+
+        // Inisialisasi
+        renderTable();
+
+    </script>
 </body>
 </html>
