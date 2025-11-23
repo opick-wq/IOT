@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Admin</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Dashboard Admin</h1>
+            <p>Selamat datang, Admin.</p>
+        </header>
+        <main>
+            <div class="menu-grid">
+                <a href="/register" class="menu-card">
+                    <h3>📝 Daftarkan Karyawan</h3>
+                    <p>Tambah data karyawan baru.</p>
+                </a>
+                <a href="/report" class="menu-card">
+                    <h3>📊 Laporan Absensi</h3>
+                    <p>Lihat riwayat kehadiran.</p>
+                </a>
+                <a href="/absen" class="menu-card">
+                    <h3>⏰ Mode Absensi</h3>
+                    <p>Buka halaman scan kartu.</p>
+                </a>
+            </div>
+        </main>
+        <footer>
+            <div class="navigation-links">
+                <a href="/logout" style="color: red;">Logout</a>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>

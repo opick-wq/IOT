@@ -15,6 +15,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentEmployee = null;
     let stream = null;
 
+    // Konfigurasi Ambang Batas Lokal
+    // Jarak di atas ini akan ditolak, meskipun server bilang OK.
+    // Semakin kecil = Semakin ketat. 0.50 adalah standar yang cukup ketat.
+    const LOCAL_DISTANCE_THRESHOLD = 0.55; 
+
     if(initialMessage) initialMessage.textContent = "Menunggu Kartu...";
 
     // --- 1. POLLING UID ---
@@ -26,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data && data.uid && data.uid !== lastUid) {
                 console.log(`💳 UID DITERIMA: ${data.uid}`);
                 lastUid = data.uid;
-                isPolling = false; // Stop polling saat ada kartu
+                isPolling = false;
                 handleRfidTap(data.uid);
             }
         } catch (error) { /* Silent fail */ }
@@ -65,10 +70,8 @@ document.addEventListener('DOMContentLoaded', () => {
         employeeStatus.textContent = employee.status;
         
         updateStatus('Silakan ambil foto untuk verifikasi.', 'info');
-        
-        // Reset tombol ke kondisi awal
         resetCaptureButton();
-
+        
         try {
             if (stream) stream.getTracks().forEach(track => track.stop());
             stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -81,16 +84,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function resetCaptureButton() {
         captureBtn.disabled = false;
         captureBtn.textContent = "Ambil Foto & Verifikasi";
-        captureBtn.classList.remove('btn-retry'); // Hapus style merah jika ada
+        captureBtn.classList.remove('btn-retry');
     }
 
     // --- 4. PROSES VERIFIKASI ---
     captureBtn.addEventListener('click', async () => {
-        // Jika sedang mode retry, reset status dulu
         if (captureBtn.classList.contains('btn-retry')) {
             updateStatus('Silakan ambil foto ulang.', 'info');
             resetCaptureButton();
-            return; // Biarkan user klik lagi untuk ambil foto
+            return;
         }
 
         captureBtn.disabled = true;
@@ -113,33 +115,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 const result = await response.json();
 
-                // --- CONSOLE LOG LENGKAP ---
+                // --- LOGGING ---
                 console.log("========================================");
-                console.log(`📡 STATUS: ${response.ok ? "BERHASIL" : "GAGAL"}`);
-                console.log(`💬 Pesan: ${result.message || result.error}`);
-                if (result.details) {
-                    console.log("🔍 Detail AI:", result.details);
-                    // Tampilkan distance jika ada di JSON teman Anda
-                    if (result.details.distance !== undefined) {
-                        console.log(`📏 Jarak (Distance): ${result.details.distance}`);
-                    }
+                console.log(`📡 STATUS API: ${response.ok ? "OK" : "GAGAL"}`);
+                let distance = 1.0; // Default jarak jauh (tidak mirip)
+                
+                if (result.details && result.details.distance !== undefined) {
+                    distance = result.details.distance;
+                    console.log(`📏 Jarak dari Server: ${distance}`);
                 }
                 console.log("========================================");
-                // ---------------------------
 
                 if (!response.ok) {
                     throw new Error(result.error || 'Verifikasi Gagal');
                 }
 
-                // SUKSES: Reset otomatis ke awal
+                // --- PENGECEKAN GANDA (DOUBLE CHECK) ---
+                // Jika server bilang OK, tapi jaraknya masih terlalu jauh menurut standar kita
+                if (distance > LOCAL_DISTANCE_THRESHOLD) {
+                     console.warn(`⚠️ Server menerima, tapi ditolak browser karena jarak ${distance} > ${LOCAL_DISTANCE_THRESHOLD}`);
+                     throw new Error(`Wajah tidak cukup mirip. Jarak: ${distance.toFixed(3)}`);
+                }
+
                 updateStatus(result.message, 'success');
                 setTimeout(resetUI, 4000); 
 
             } catch (error) {
-                // GAGAL: Jangan reset UI! Beri kesempatan coba lagi
-                updateStatus(error.message, 'error');
-                
-                // Ubah tombol jadi "Coba Lagi"
+                updateStatus(error.message + " Silakan coba lagi.", 'error');
                 captureBtn.disabled = false;
                 captureBtn.textContent = "Coba Lagi";
                 captureBtn.classList.add('btn-retry');
