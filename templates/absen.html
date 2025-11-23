@@ -3,23 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistem Absensi Karyawan</title>
+    <title>Absensi Karyawan</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <!-- HAPUS SCRIPT FACE-API, CUKUP SCRIPT UTAMA -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Sistem Absensi Cerdas</h1>
-            <p>Silakan Lakukan Absensi</p>
+            <h1>Absensi Karyawan</h1>
+            <p>Tempelkan Kartu untuk Memulai</p>
         </header>
         <main>
             <div id="main-content">
                 <div class="scanner-placeholder">
-                    <!-- ID ini tetap ada agar script tidak error, tapi isinya default -->
                     <p id="initial-message">Menunggu Kartu...</p>
-                    <small>Pastikan bridge_http.py berjalan di komputer Anda.</small>
+                    <small>Pastikan bridge berjalan di komputer.</small>
                 </div>
             </div>
             <div id="verification-content" class="hidden">
@@ -31,15 +29,14 @@
                 <div class="camera-card">
                     <video id="webcam" autoplay playsinline></video>
                     <canvas id="canvas" class="hidden"></canvas>
-                    <button id="capture-btn" disabled>Ambil Foto & Verifikasi</button>
+                    <button id="capture-btn">Ambil Foto & Verifikasi</button>
                 </div>
             </div>
         </main>
         <footer>
             <div id="status-message"></div>
             <div class="navigation-links">
-                <a href="/register">Daftarkan Karyawan Baru</a> | 
-                <a href="/report">Lihat Laporan Absensi</a>
+                <a href="/login" style="font-size: 0.8rem; color: #aaa;">Login Admin</a>
             </div>
         </footer>
     </div>

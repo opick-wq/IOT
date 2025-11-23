@@ -15,7 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentEmployee = null;
     let stream = null;
 
-    // Update pesan awal
     if(initialMessage) initialMessage.textContent = "Menunggu Kartu...";
 
     // --- 1. POLLING UID ---
@@ -27,12 +26,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data && data.uid && data.uid !== lastUid) {
                 console.log(`💳 UID DITERIMA: ${data.uid}`);
                 lastUid = data.uid;
-                isPolling = false;
+                isPolling = false; // Stop polling saat ada kartu
                 handleRfidTap(data.uid);
             }
-        } catch (error) {
-            // Silent error agar tidak spam log
-        }
+        } catch (error) { /* Silent fail */ }
     }
     setInterval(pollForUid, 2000);
 
@@ -49,7 +46,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(result.error);
 
             currentEmployee = result;
-            // Pastikan UID tersimpan di objek employee jika API tidak mengembalikannya
             if (!currentEmployee.rfid_uid) currentEmployee.rfid_uid = rfid; 
             
             displayCameraUI(result);
@@ -70,22 +66,36 @@ document.addEventListener('DOMContentLoaded', () => {
         
         updateStatus('Silakan ambil foto untuk verifikasi.', 'info');
         
+        // Reset tombol ke kondisi awal
+        resetCaptureButton();
+
         try {
             if (stream) stream.getTracks().forEach(track => track.stop());
             stream = await navigator.mediaDevices.getUserMedia({ video: true });
             webcamElement.srcObject = stream;
-            captureBtn.disabled = false;
-            captureBtn.textContent = "Ambil Foto & Verifikasi";
         } catch (error) {
             updateStatus('Gagal akses kamera.', 'error');
         }
     }
     
-    // --- 4. KIRIM FOTO KE SERVER (YANG AKAN TERUSKAN KE API TEMAN) ---
+    function resetCaptureButton() {
+        captureBtn.disabled = false;
+        captureBtn.textContent = "Ambil Foto & Verifikasi";
+        captureBtn.classList.remove('btn-retry'); // Hapus style merah jika ada
+    }
+
+    // --- 4. PROSES VERIFIKASI ---
     captureBtn.addEventListener('click', async () => {
+        // Jika sedang mode retry, reset status dulu
+        if (captureBtn.classList.contains('btn-retry')) {
+            updateStatus('Silakan ambil foto ulang.', 'info');
+            resetCaptureButton();
+            return; // Biarkan user klik lagi untuk ambil foto
+        }
+
         captureBtn.disabled = true;
         captureBtn.textContent = "Memverifikasi...";
-        updateStatus('Sedang memverifikasi wajah dengan Server AI...', 'loading');
+        updateStatus('Sedang memverifikasi wajah...', 'loading');
 
         canvasElement.width = webcamElement.videoWidth;
         canvasElement.height = webcamElement.videoHeight;
@@ -98,40 +108,41 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('live_image', blob, 'capture.jpg');
             
             try {
-                // Kirim ke app.py, nanti app.py yang kirim ke API teman
                 const response = await fetch('/api/record-attendance', { 
-                    method: 'POST', 
-                    body: formData 
+                    method: 'POST', body: formData 
                 });
-                
                 const result = await response.json();
 
-                // LOG RESPON UNTUK DEBUGGING
+                // --- CONSOLE LOG LENGKAP ---
                 console.log("========================================");
-                console.log("📡 RESPON DARI SERVER:");
-                console.log("Status:", response.status);
-                console.log("Pesan:", result.message || result.error);
+                console.log(`📡 STATUS: ${response.ok ? "BERHASIL" : "GAGAL"}`);
+                console.log(`💬 Pesan: ${result.message || result.error}`);
                 if (result.details) {
-                    console.log("Detail dari API AI:", result.details);
-                    // Log jarak jika ada
+                    console.log("🔍 Detail AI:", result.details);
+                    // Tampilkan distance jika ada di JSON teman Anda
                     if (result.details.distance !== undefined) {
-                        console.log(`📊 Jarak Wajah: ${result.details.distance}`);
-                    }
-                    if (result.details.similarity !== undefined) {
-                        console.log(`📊 Kemiripan: ${result.details.similarity}`);
+                        console.log(`📏 Jarak (Distance): ${result.details.distance}`);
                     }
                 }
                 console.log("========================================");
+                // ---------------------------
 
+                if (!response.ok) {
+                    throw new Error(result.error || 'Verifikasi Gagal');
+                }
 
-                if (!response.ok) throw new Error(result.error || 'Verifikasi Gagal');
-
+                // SUKSES: Reset otomatis ke awal
                 updateStatus(result.message, 'success');
-                setTimeout(resetUI, 4000);
+                setTimeout(resetUI, 4000); 
 
             } catch (error) {
+                // GAGAL: Jangan reset UI! Beri kesempatan coba lagi
                 updateStatus(error.message, 'error');
-                setTimeout(resetUI, 4000);
+                
+                // Ubah tombol jadi "Coba Lagi"
+                captureBtn.disabled = false;
+                captureBtn.textContent = "Coba Lagi";
+                captureBtn.classList.add('btn-retry');
             }
         }, 'image/jpeg');
     });
@@ -148,5 +159,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateStatus("Silakan tempelkan kartu RFID Anda.", "info");
         isPolling = true; 
         lastUid = null;
+        currentEmployee = null;
     }
 });
