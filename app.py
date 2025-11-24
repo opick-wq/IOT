@@ -10,7 +10,7 @@ from functools import wraps
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "rahasia_dapur_bor") # Ganti dengan key acak di Vercel
+app.secret_key = os.environ.get("SECRET_KEY") # Ganti dengan key acak di Vercel
 
 # --- KONFIGURASI SUPABASE ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -18,8 +18,8 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 FRIEND_API_URL = "https://yudhriz-api-absensi.hf.space/verify"
 
 # --- LOGIN ADMIN ---
-ADMIN_USER = os.environ.get("ADMIN_USERNAME", "admin")
-ADMIN_PASS = os.environ.get("ADMIN_PASSWORD", "admin123")
+ADMIN_USER = os.environ.get("ADMIN_USERNAME")
+ADMIN_PASS = os.environ.get("ADMIN_PASSWORD")
 
 if not all([SUPABASE_URL, SUPABASE_KEY]):
     print("WARNING: Kredensial Supabase tidak ditemukan.")
