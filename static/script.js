@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Konfigurasi Ambang Batas Lokal
     // Jarak di atas ini akan ditolak, meskipun server bilang OK.
     // Semakin kecil = Semakin ketat. 0.50 adalah standar yang cukup ketat.
-    const LOCAL_DISTANCE_THRESHOLD = 0.55; 
+    const LOCAL_DISTANCE_THRESHOLD = 0.60; 
 
     if(initialMessage) initialMessage.textContent = "Menunggu Kartu...";
 
