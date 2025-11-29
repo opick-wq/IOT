@@ -70,35 +70,11 @@ def register_employee():
 @app.route('/api/attendance/report', methods=['GET'])
 def get_attendance_report():
     try:
-        # Ambil seluruh data raw absensi
-        response = (
-            supabase.table('attendance_records')
-            .select('''
-                id,
-                employee_id,
-                timestamp,
-                type,
-                attendance_status,
-                employees(
-                    id,
-                    name,
-                    status
-                )
-            ''')
-            .order('timestamp', desc=True)
-            .execute()
-        )
-
-        data = response.data
-
-        # Pastikan timestamp tidak kosong agar tidak bikin error .split()
-        for rec in data:
-            if rec.get("timestamp") is None:
-                # pakai tanggal hari ini biar tetap valid
-                rec["timestamp"] = datetime.now().isoformat()
-
-        return jsonify(data), 200
-
+        # Mengambil kolom attendance_status juga
+        response = supabase.table('attendance_records').select(
+            'id, employee_id, timestamp, type, attendance_status, employees(name, status)'
+        ).order('timestamp', desc=True).execute()
+        return jsonify(response.data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -150,14 +126,30 @@ def manual_attendance():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/attendance/report', methods=['GET'])
-def get_attendance_report():
+@app.route('/api/attendance/<int:record_id>', methods=['PUT'])
+def update_attendance(record_id):
     try:
-        response = supabase.table('attendance_records').select(
-            'id, employee_id, timestamp::text, type, attendance_status, employees(name, status)'
-        ).order('timestamp', desc=True).execute()
+        data = request.get_json()
 
-        return jsonify(response.data), 200
+        date = data.get("date")
+        check_in = data.get("check_in")
+        check_out = data.get("check_out")
+        status = data.get("attendance_status")
+
+        update_data = {}
+
+        # Update timestamp sesuai type record (frontend sudah kirim id_in atau id_out)
+        if check_in:
+            update_data["timestamp"] = f"{date}T{check_in}:00"
+        if check_out:
+            update_data["timestamp"] = f"{date}T{check_out}:00"
+
+        if status:
+            update_data["attendance_status"] = status
+
+        supabase.table("attendance_records").update(update_data).eq("id", record_id).execute()
+
+        return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
