@@ -27,10 +27,8 @@ ADMIN_PASS = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Waktu batas masuk pagi (08:00:00)
-JAM_MASUK_BATAS = time(8, 0, 0)
-
 # --- API ENDPOINTS (JSON ONLY) ---
+
 # 1. API LOGIN
 @app.route('/api/login', methods=['POST'])
 def api_login():
@@ -70,78 +68,39 @@ def register_employee():
 
 # 3. API LIST DATA ABSENSI (REPORT)
 @app.route('/api/attendance/report', methods=['GET'])
-def attendance_report():
+def get_attendance_report():
     try:
-        # Ambil semua record absensi
-        records = supabase.table("attendance_records") \
-            .select("id, employee_id, timestamp, type, attendance_status") \
-            .order("timestamp") \
-            .execute().data
+        # Ambil seluruh data raw absensi
+        response = (
+            supabase.table('attendance_records')
+            .select('''
+                id,
+                employee_id,
+                timestamp,
+                type,
+                attendance_status,
+                employees(
+                    id,
+                    name,
+                    status
+                )
+            ''')
+            .order('timestamp', desc=True)
+            .execute()
+        )
 
-        # Ambil data employee
-        employees = supabase.table("employees").select("id, name").execute().data
-        emp_map = {e["id"]: e["name"] for e in employees}
+        data = response.data
 
-        # Group berdasarkan employee & tanggal
-        merged = {}
+        # Pastikan timestamp tidak kosong agar tidak bikin error .split()
+        for rec in data:
+            if rec.get("timestamp") is None:
+                # pakai tanggal hari ini biar tetap valid
+                rec["timestamp"] = datetime.now().isoformat()
 
-        for r in records:
-            date = r["timestamp"].split("T")[0]
-            key = f"{r['employee_id']}_{date}"
-
-            if key not in merged:
-                merged[key] = {
-                    "employee_id": r["employee_id"],
-                    "employee_name": emp_map.get(r["employee_id"], "-"),
-                    "date": date,
-                    "check_in": None,
-                    "check_out": None,
-                    "status": None
-                }
-
-            if r["type"] == "check_in":
-                merged[key]["check_in"] = r["timestamp"]
-                merged[key]["check_in_status"] = r["attendance_status"]
-
-            if r["type"] == "check_out":
-                merged[key]["check_out"] = r["timestamp"]
-                merged[key]["check_out_status"] = r["attendance_status"]
-
-            # Jika record manual punya status (Sakit/Izin/Alpha)
-            if r["attendance_status"] in ["Sakit", "Izin", "Alpha"]:
-                merged[key]["status"] = r["attendance_status"]
-
-        # Tentukan status akhir merge
-        final_output = []
-
-        for key, row in merged.items():
-
-            if row["status"] in ["Sakit", "Izin", "Alpha"]:
-                final = row["status"]
-            else:
-                # Auto menentukan status
-                if row["check_in"] and row["check_out"]:
-                    if row.get("check_in_status") == "Terlambat":
-                        final = "Terlambat"
-                    else:
-                        final = "Hadir"
-
-                elif row["check_in"] and not row["check_out"]:
-                    final = "Belum Check-out"
-
-                elif not row["check_in"]:
-                    final = "Alpha"
-
-            final_output.append({
-                **row,
-                "final_status": final
-            })
-
-        return jsonify(final_output), 200
+        return jsonify(data), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 # 4. API LIST KARYAWAN (Untuk Dropdown di Frontend)
 @app.route('/api/employees-list', methods=['GET'])
@@ -241,6 +200,10 @@ def get_employee_data():
         return jsonify({"error": str(e)}), 500
 
 # 7. API CATAT ABSENSI (VERIFIKASI WAJAH)
+# Konfigurasi Jam Masuk (untuk status otomatis)
+JAM_MASUK_BATAS = time(8, 0, 0) 
+
+
 @app.route('/api/record-attendance', methods=['POST'])
 def record_attendance():
     try:
