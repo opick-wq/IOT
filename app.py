@@ -150,41 +150,14 @@ def manual_attendance():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/attendance/<int:record_id>', methods=['PUT'])
-def update_attendance(record_id):
+@app.route('/api/attendance/report', methods=['GET'])
+def get_attendance_report():
     try:
-        data = request.get_json()
+        response = supabase.table('attendance_records').select(
+            'id, employee_id, timestamp::text, type, attendance_status, employees(name, status)'
+        ).order('timestamp', desc=True).execute()
 
-        date = data.get("date")            # ex: "2025-11-29"
-        check_in = data.get("check_in")    # ex: "08:56"
-        check_out = data.get("check_out")  # ex: "13:58"
-        status = data.get("attendance_status")
-
-        update_data = {}
-
-        # Ambil record existing dulu untuk tahu type-nya
-        old = supabase.table("attendance_records").select("type").eq("id", record_id).single().execute()
-
-        if not old.data:
-            return jsonify({"error": "Record tidak ditemukan"}), 404
-        
-        record_type = old.data["type"]  # "check_in" atau "check_out"
-
-        # Format final timestamp => "2025-11-29T08:56:00"
-        if record_type == "check_in" and check_in:
-            update_data["timestamp"] = f"{date}T{check_in}:00"
-
-        if record_type == "check_out" and check_out:
-            update_data["timestamp"] = f"{date}T{check_out}:00"
-
-        # Update status
-        if status:
-            update_data["attendance_status"] = status
-
-        supabase.table("attendance_records").update(update_data).eq("id", record_id).execute()
-
-        return jsonify({"success": True})
-
+        return jsonify(response.data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
