@@ -131,26 +131,48 @@ def update_attendance(record_id):
     try:
         data = request.get_json()
 
-        date = data.get("date")
-        check_in = data.get("check_in")
-        check_out = data.get("check_out")
+        # Ambil data dari input frontend
+        date_val = data.get("date")          # Format: YYYY-MM-DD
+        check_in_time = data.get("check_in") # Format: HH:MM
+        check_out_time = data.get("check_out") # Format: HH:MM
         status = data.get("attendance_status")
 
-        update_data = {}
+        # 1. Cari tahu dulu record_id ini milik karyawan siapa
+        # Kita butuh employee_id untuk mencari pasangannya
+        current_record = supabase.table("attendance_records").select("employee_id").eq("id", record_id).execute()
+        
+        if not current_record.data:
+            return jsonify({"error": "Record not found"}), 404
+            
+        employee_id = current_record.data[0]['employee_id']
 
-        # Update timestamp sesuai type record (frontend sudah kirim id_in atau id_out)
-        if check_in:
-            update_data["timestamp"] = f"{date}T{check_in}:00"
-        if check_out:
-            update_data["timestamp"] = f"{date}T{check_out}:00"
+        # 2. UPDATE CHECK IN (Mencari record tipe check_in di tanggal & karyawan tsb)
+        if check_in_time:
+            # Buat timestamp lengkap
+            new_in_ts = f"{date_val}T{check_in_time}:00"
+            
+            # Update row yang type='check_in'
+            # Kita filter berdasarkan employee_id dan tanggal (menggunakan filter lte & gte untuk tanggal)
+            # Atau cara simpel: cari row check_in milik user ini di tanggal ini
+            supabase.table("attendance_records").update({
+                "timestamp": new_in_ts
+            }).eq("employee_id", employee_id).eq("type", "check_in").gte("timestamp", f"{date_val}T00:00:00").lte("timestamp", f"{date_val}T23:59:59").execute()
 
-        if status:
-            update_data["attendance_status"] = status
+        # 3. UPDATE CHECK OUT (Mencari record tipe check_out di tanggal & karyawan tsb)
+        if check_out_time:
+            new_out_ts = f"{date_val}T{check_out_time}:00"
+            
+            update_payload = {"timestamp": new_out_ts}
+            if status:
+                update_payload["attendance_status"] = status
 
-        supabase.table("attendance_records").update(update_data).eq("id", record_id).execute()
+            # Update row yang type='check_out'
+            supabase.table("attendance_records").update(update_payload).eq("employee_id", employee_id).eq("type", "check_out").gte("timestamp", f"{date_val}T00:00:00").lte("timestamp", f"{date_val}T23:59:59").execute()
 
         return jsonify({"success": True})
+
     except Exception as e:
+        print(f"Error: {e}") # Print error di console server untuk debugging
         return jsonify({"error": str(e)}), 500
     
 
@@ -233,7 +255,7 @@ def record_attendance():
             status_ket = "Tepat Waktu" if current_time <= JAM_MASUK_BATAS else "Terlambat"
         else:
             att_type = "check_out"
-            status_ket = "Pulang"
+            status_ket = "Hadir"
 
         # Insert record
         supabase.table('attendance_records').insert({
