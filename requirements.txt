@@ -2,4 +2,5 @@ Flask
 supabase
 requests
 python-dotenv
-numpy
+flask-cors
+#numpy
