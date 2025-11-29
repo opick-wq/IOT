@@ -160,12 +160,27 @@ def update_attendance(record_id):
         check_out = data.get("check_out")
         status = data.get("attendance_status")
 
+        # Cek record dulu di database
+        existing = (
+            supabase.table("attendance_records")
+            .select("type")
+            .eq("id", record_id)
+            .single()
+            .execute()
+        )
+
+        if not existing.data:
+            return jsonify({"error": "Record tidak ditemukan"}), 404
+
+        record_type = existing.data["type"]
+
         update_data = {}
 
-        # Update timestamp sesuai type record (frontend sudah kirim id_in atau id_out)
-        if check_in:
+        # Gunakan type original untuk menentukan timestamp mana yang diperbarui
+        if record_type == "check_in" and check_in:
             update_data["timestamp"] = f"{date}T{check_in}:00"
-        if check_out:
+
+        if record_type == "check_out" and check_out:
             update_data["timestamp"] = f"{date}T{check_out}:00"
 
         if status:
@@ -174,6 +189,7 @@ def update_attendance(record_id):
         supabase.table("attendance_records").update(update_data).eq("id", record_id).execute()
 
         return jsonify({"success": True})
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
