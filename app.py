@@ -177,9 +177,7 @@ def get_employee_data():
 
 # 7. API CATAT ABSENSI (VERIFIKASI WAJAH)
 # Konfigurasi Jam Masuk (untuk status otomatis)
-JAM_MASUK_BATAS = time(8, 0, 0) 
-
-
+JAM_MASUK_BATAS = time(23, 0, 0) 
 @app.route('/api/record-attendance', methods=['POST'])
 def record_attendance():
     try:
