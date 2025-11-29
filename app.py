@@ -28,6 +28,17 @@ ADMIN_PASS = os.environ.get("ADMIN_PASSWORD", "admin123")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- API ENDPOINTS (JSON ONLY) ---
+def get_file_path_from_url(url):
+    """Mengambil path file (photos/xxx.jpg) dari URL publik Supabase"""
+    try:
+        # URL contoh: https://.../storage/v1/object/public/employee_photos/photos/UID.jpg
+        # Kita butuh: photos/UID.jpg
+        if "employee_photos/" in url:
+            return url.split("employee_photos/")[1]
+    except:
+        return None
+    return None
+
 
 # 1. API LOGIN
 @app.route('/api/login', methods=['POST'])
@@ -45,25 +56,37 @@ def api_login():
 @app.route('/api/register-employee', methods=['POST'])
 def register_employee():
     try:
-        name = request.form['name']
-        status = request.form['status']
-        rfid_uid = request.form['rfid_uid']
-        photo = request.files['photo']
+        name = request.form.get('name')
+        status = request.form.get('status')
+        rfid_uid = request.form.get('rfid_uid')
+        photo = request.files.get('photo')
+
+        if not all([name, status, rfid_uid, photo]):
+            return jsonify({"error": "Data tidak lengkap"}), 400
 
         file_extension = os.path.splitext(photo.filename)[1]
         file_path = f"photos/{rfid_uid}{file_extension}"
         
+        # Upload foto ke Supabase Storage
         photo.seek(0)
         supabase.storage.from_('employee_photos').upload(
-            file_path, photo.read(), {"content-type": photo.mimetype}
+            file_path, photo.read(), {"content-type": photo.mimetype, "upsert": "true"}
         )
         image_url = supabase.storage.from_('employee_photos').get_public_url(file_path)
 
+        # Simpan data karyawan
         data = {'name': name, 'status': status, 'rfid_uid': rfid_uid, 'image_url': image_url}
         supabase.table('employees').insert(data).execute()
 
         return jsonify({"success": True, "message": f"{name} berhasil didaftarkan"}), 200
+
     except Exception as e:
+        error_message = str(e).lower()
+        # Cek apakah error mengandung kata "duplicate" atau kode error SQL untuk duplikat
+        if "duplicate key" in error_message or "23505" in error_message:
+            return jsonify({"error": "Gagal Mendaftar: ID Kartu RFID ini sudah terdaftar!"}), 409
+        
+        # Jika error lain, tampilkan aslinya
         return jsonify({"error": str(e)}), 500
 
 # 3. API LIST DATA ABSENSI (REPORT)
@@ -286,13 +309,79 @@ def get_employees_full_list():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# API Hapus Karyawan
+
+# 2. UPDATE KARYAWAN (BARU)
+@app.route('/api/employees/<int:id>', methods=['PUT'])
+def update_employee(id):
+    try:
+        name = request.form.get('name')
+        status = request.form.get('status')
+        rfid_uid = request.form.get('rfid_uid')
+        photo = request.files.get('photo') # Foto opsional saat edit
+
+        # Ambil data lama untuk jaga-jaga
+        old_data = supabase.table('employees').select('*').eq('id', id).single().execute().data
+
+        update_payload = {
+            'name': name,
+            'status': status,
+            'rfid_uid': rfid_uid
+        }
+
+        # Jika ada upload foto baru
+        if photo:
+            file_extension = os.path.splitext(photo.filename)[1]
+            file_path = f"photos/{rfid_uid}{file_extension}"
+            
+            # Hapus foto lama jika nama filenya beda (opsional, tapi bersih)
+            if old_data and old_data.get('image_url'):
+                old_path = get_file_path_from_url(old_data['image_url'])
+                if old_path:
+                    supabase.storage.from_('employee_photos').remove([old_path])
+
+            # Upload foto baru
+            photo.seek(0)
+            supabase.storage.from_('employee_photos').upload(
+                file_path, photo.read(), {"content-type": photo.mimetype, "upsert": "true"}
+            )
+            image_url = supabase.storage.from_('employee_photos').get_public_url(file_path)
+            update_payload['image_url'] = image_url
+
+        # Update Database
+        supabase.table('employees').update(update_payload).eq('id', id).execute()
+
+        return jsonify({"success": True, "message": "Data karyawan berhasil diupdate"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# 3. DELETE KARYAWAN (DIPERBAIKI: Hapus Foto juga)
 @app.route('/api/employees/<int:id>', methods=['DELETE'])
 def delete_employee(id):
     try:
+        # 1. Ambil info karyawan dulu sebelum dihapus untuk dapat URL foto
+        response = supabase.table('employees').select('image_url').eq('id', id).single().execute()
+        employee = response.data
+
+        # 2. Hapus Foto di Storage
+        if employee and employee.get('image_url'):
+            file_path = get_file_path_from_url(employee['image_url'])
+            if file_path:
+                # Hapus file dari bucket
+                res = supabase.storage.from_('employee_photos').remove([file_path])
+                if isinstance(res, list) and len(res) == 0:
+                    print("Warning: File mungkin sudah tidak ada atau gagal dihapus.")
+
+        # 3. Hapus Data di Database (Cascade delete record absensi biasanya diatur di DB, tapi aman dihapus parentnya)
+        # Hapus record absensi terkait dulu (manual cascade jika di DB tidak diset)
+        supabase.table('attendance_records').delete().eq('employee_id', id).execute()
+        
+        # Hapus karyawan
         supabase.table('employees').delete().eq('id', id).execute()
-        return jsonify({"success": True}), 200
+
+        return jsonify({"success": True, "message": "Karyawan dan data terkait berhasil dihapus"}), 200
     except Exception as e:
+        print(f"Error deleting: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
