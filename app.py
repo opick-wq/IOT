@@ -155,41 +155,46 @@ def update_attendance(record_id):
     try:
         data = request.get_json()
 
-        date = data.get("date")
-        check_in = data.get("check_in")
-        check_out = data.get("check_out")
-        status = data.get("attendance_status")
-
-        # Cek record dulu di database
-        existing = (
-            supabase.table("attendance_records")
-            .select("type")
-            .eq("id", record_id)
-            .single()
-            .execute()
-        )
-
-        if not existing.data:
-            return jsonify({"error": "Record tidak ditemukan"}), 404
-
-        record_type = existing.data["type"]
+        date = data.get("date")                # Contoh: "2025-11-29"
+        check_in = data.get("check_in")        # Contoh: "08:56 AM"
+        check_out = data.get("check_out")      # Contoh: "01:58 PM"
+        status = data.get("attendance_status") # Alpha / Hadir / dll
 
         update_data = {}
 
-        # Gunakan type original untuk menentukan timestamp mana yang diperbarui
+        # Convert AM/PM → HH:MM:SS
+        def convert_time(t):
+            if not t:
+                return None
+            return datetime.strptime(t, "%I:%M %p").strftime("%H:%M:%S")
+
+        # Check backend which record it is (in/out)
+        old_record = supabase.table("attendance_records") \
+            .select("type") \
+            .eq("id", record_id) \
+            .single() \
+            .execute()
+
+        if not old_record.data:
+            return jsonify({"error": "Record tidak ditemukan"}), 404
+
+        record_type = old_record.data["type"]  # 'check_in' atau 'check_out'
+
+        # Apply updated timestamps
         if record_type == "check_in" and check_in:
-            update_data["timestamp"] = f"{date}T{check_in}:00"
-
+            update_data["timestamp"] = f"{date}T{convert_time(check_in)}"
+        
         if record_type == "check_out" and check_out:
-            update_data["timestamp"] = f"{date}T{check_out}:00"
+            update_data["timestamp"] = f"{date}T{convert_time(check_out)}"
 
+        # Update status
         if status:
             update_data["attendance_status"] = status
 
         supabase.table("attendance_records").update(update_data).eq("id", record_id).execute()
 
         return jsonify({"success": True})
-
+    
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
