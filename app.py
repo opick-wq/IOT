@@ -59,7 +59,7 @@ def register_employee():
         name = request.form.get('name')
         status = request.form.get('status')
         rfid_uid = request.form.get('rfid_uid')
-        photo = request.files.get('photo')
+        photo = request.files.get('image_url')
 
         if not all([name, status, rfid_uid, photo]):
             return jsonify({"error": "Data tidak lengkap"}), 400
@@ -317,7 +317,7 @@ def update_employee(id):
         name = request.form.get('name')
         status = request.form.get('status')
         rfid_uid = request.form.get('rfid_uid')
-        photo = request.files.get('photo') # Foto opsional saat edit
+        photo = request.files.get('image_url') # Foto opsional saat edit
 
         # Ambil data lama untuk jaga-jaga
         old_data = supabase.table('employees').select('*').eq('id', id).single().execute().data
