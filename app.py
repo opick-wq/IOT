@@ -275,6 +275,25 @@ def record_attendance():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+
+@app.route('/api/employees-full-list', methods=['GET'])
+def get_employees_full_list():
+    try:
+        # Ambil semua kolom
+        response = supabase.table('employees').select('*').order('id', desc=True).execute()
+        return jsonify(response.data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# API Hapus Karyawan
+@app.route('/api/employees/<int:id>', methods=['DELETE'])
+def delete_employee(id):
+    try:
+        supabase.table('employees').delete().eq('id', id).execute()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
