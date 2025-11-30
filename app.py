@@ -295,13 +295,12 @@ def record_attendance():
         # ============================================
         # 3. PERSIAPAN WAKTU
         # ============================================
+        # 3. PERSIAPAN WAKTU
         tz_jakarta = pytz.timezone('Asia/Jakarta')
         now = datetime.now(tz_jakarta) 
         today = now.date()
 
-        # ============================================
         # 4. CEK STATUS CHECK-IN HARI INI
-        # ============================================
         checkin_res = supabase.table('attendance_records') \
             .select('*') \
             .eq('employee_id', employee['id']) \
@@ -313,22 +312,28 @@ def record_attendance():
 
         today_checkin = checkin_res.data if checkin_res and checkin_res.data else None
 
-        # ============================================
         # 5. LOGIKA ABSENSI
-        # ============================================
         
         # --- SKENARIO A: BELUM CHECK-IN ---
         if today_checkin is None:
             check_in_time = now.time()
             status = "Telat" if check_in_time > BATAS_TELAT else "Tepat Waktu"
 
-            # Simpan Check-In (Penting: pakai .select() biar return data)
-            supabase.table('attendance_records').insert({
-                "employee_id": employee['id'],
-                "timestamp": now.isoformat(),
-                "type": "check_in",
-                "attendance_status": status
-            }).select().execute()
+            # === FIX: HAPUS .select() DAN TAMBAH TRY-EXCEPT KHUSUS ===
+            try:
+                supabase.table('attendance_records').insert({
+                    "employee_id": employee['id'],
+                    "timestamp": now.isoformat(),
+                    "type": "check_in",
+                    "attendance_status": status
+                }).execute()
+            except Exception as e:
+                # Jika error mengandung "204" atau "Missing response", itu artinya BERHASIL disimpan
+                # Kita abaikan errornya (pass)
+                if "204" in str(e) or "Missing response" in str(e):
+                    pass 
+                else:
+                    raise e # Kalau error lain (misal koneksi putus), baru kita lempar errornya
 
             return jsonify({
                 "success": True,
@@ -351,7 +356,7 @@ def record_attendance():
             
             today_checkout = checkout_res.data if checkout_res and checkout_res.data else None
 
-            # JIKA SUDAH ADA DATA CHECK-OUT -> BLOCK (GABOLEH ABSEN LAGI)
+            # JIKA SUDAH ADA DATA CHECK-OUT -> BLOCK
             if today_checkout:
                 return jsonify({
                     "error": "Anda sudah selesai absen hari ini (Sudah Check-Out/Pulang).",
@@ -359,12 +364,20 @@ def record_attendance():
                 }), 400
 
             # JIKA BELUM ADA DATA CHECK-OUT -> LAKUKAN CHECK-OUT
-            supabase.table('attendance_records').insert({
-                "employee_id": employee['id'],
-                "timestamp": now.isoformat(),
-                "type": "check_out",
-                "attendance_status": "Hadir"
-            }).select().execute() # Pakai .select()
+            # === FIX: HAPUS .select() DAN TAMBAH TRY-EXCEPT KHUSUS ===
+            try:
+                supabase.table('attendance_records').insert({
+                    "employee_id": employee['id'],
+                    "timestamp": now.isoformat(),
+                    "type": "check_out",
+                    "attendance_status": "Hadir"
+                }).execute()
+            except Exception as e:
+                # Abaikan error 204 (Missing response) karena itu berarti sukses
+                if "204" in str(e) or "Missing response" in str(e):
+                    pass
+                else:
+                    raise e
 
             return jsonify({
                 "success": True,
@@ -375,7 +388,7 @@ def record_attendance():
             }), 200
 
     except Exception as e:
-        print("ERROR:", e)
+        print("ERROR SYSTEM:", e)
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/employees-full-list', methods=['GET'])
