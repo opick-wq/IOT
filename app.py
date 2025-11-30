@@ -5,7 +5,6 @@ from flask_cors import CORS
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from datetime import datetime, time
-import pytz
 
 load_dotenv()
 
@@ -253,30 +252,21 @@ def get_employee_data():
 
 # 7. API CATAT ABSENSI (VERIFIKASI WAJAH)
 # Konfigurasi Jam Masuk (untuk status otomatis)
-# --- 7. API CATAT ABSENSI (DENGAN LOGIKA THRESHOLD KETAT) ---
-JAM_MASUK_BATAS = time(23, 0, 0) # Sesuaikan jam masuk
-# Pastikan library ini sudah di-import di paling atas file
-# import pytz 
-# from datetime import datetime, time
-
-# Sesuaikan jam masuk (misal jam 8 pagi)
 JAM_MASUK_BATAS = time(23, 0, 0) 
-
 @app.route('/api/record-attendance', methods=['POST'])
 def record_attendance():
     try:
-        # 1. Terima Data
         rfid_uid = request.form.get('rfid')
         live_image = request.files.get('live_image')
 
-        # 2. Cek Karyawan
+        # Cari karyawan
         emp_resp = supabase.table('employees').select('id, name').eq('rfid_uid', rfid_uid).single().execute()
         if not emp_resp.data:
-            return jsonify({"error": "ID Karyawan tidak ditemukan"}), 404
+            return jsonify({"error": "ID tidak ditemukan"}), 404
 
         employee = emp_resp.data
 
-        # 3. Kirim ke API AI (FaceHugging)
+        # Kirim ke API verifikasi wajah
         files = {'file': (live_image.filename, live_image.stream, live_image.mimetype)}
         data = {'user_id': rfid_uid}
 
@@ -286,30 +276,15 @@ def record_attendance():
         except:
             return jsonify({"error": "Gagal koneksi ke server AI"}), 502
 
-        # --- PENTING: AMBIL SCORE UNTUK DIKIRIM KE FRONTEND ---
-        # Kita ambil nilai similarity, default 0 jika gagal baca
-        try:
-            # FaceHugging biasanya pakai key 'similarity' atau 'score'
-            current_score = float(api_data.get('similarity', api_data.get('score', 0)))
-        except:
-            current_score = 0.0
-
-        # Cek Dasar: Jika API AI sendiri bilang Error/Wajah Salah (Status bukan 200)
         if api_res.status_code != 200:
-            return jsonify({
-                "error": "Wajah tidak dikenali oleh sistem AI", 
-                "details": api_data,
-                "score": current_score
-            }), 401
+            return jsonify({"error": "Wajah tidak cocok", "details": api_data}), 401
 
-        # 4. Atur Zona Waktu (WIB)
-        # Agar jam masuk di database sesuai waktu Indonesia
-        wib = pytz.timezone('Asia/Jakarta')
-        now = datetime.now(wib)
+        # Waktu sekarang
+        now = datetime.now()
         today_str = now.strftime("%Y-%m-%d")
         current_time = now.time()
 
-        # 5. Cek Riwayat Absen Hari Ini
+        # Cari record hari ini
         today_records = supabase.table("attendance_records") \
             .select("id, type") \
             .eq("employee_id", employee["id"]) \
@@ -320,15 +295,14 @@ def record_attendance():
         has_check_in = any(r["type"] == "check_in" for r in today_records)
         has_check_out = any(r["type"] == "check_out" for r in today_records)
 
-        # Tolak jika sudah absen lengkap
+        # ❗ Blokir bila sudah check-in & check-out
         if has_check_in and has_check_out:
             return jsonify({
-                "error": "Anda sudah absen lengkap (Masuk & Pulang) hari ini.",
-                "status": "Hadir",
-                "score": current_score
+                "error": "Hari ini sudah lengkap absen (check-in & check-out)",
+                "status": "Hadir"
             }), 400
 
-        # 6. Tentukan Check-In atau Check-Out
+        # Tentukan jenis absensi
         if not has_check_in:
             att_type = "check_in"
             status_ket = "Tepat Waktu" if current_time <= JAM_MASUK_BATAS else "Terlambat"
@@ -336,7 +310,7 @@ def record_attendance():
             att_type = "check_out"
             status_ket = "Hadir"
 
-        # 7. Simpan ke Database
+        # Insert record
         supabase.table('attendance_records').insert({
             "employee_id": employee["id"],
             "timestamp": now.isoformat(),
@@ -344,18 +318,15 @@ def record_attendance():
             "attendance_status": status_ket
         }).execute()
 
-        # 8. RESPONSE KE FRONTEND
-        # Di sini kita kirim 'score' agar Frontend bisa melakukan validasi threshold (0.60)
+        # Response
         return jsonify({
             "success": True,
-            "message": f"Absensi {att_type} Berhasil!",
+            "message": f"Absensi {att_type} berhasil",
             "attendance_status": status_ket,
-            "score": current_score,  # <--- INI KUNCINYA
             "details": api_data
         }), 200
 
     except Exception as e:
-        print(f"Error: {e}")
         return jsonify({"error": str(e)}), 500
     
 
