@@ -293,18 +293,15 @@ def record_attendance():
             return jsonify({"error": "Wajah tidak cocok", "details": api_result}), 401
 
         # ============================================
-        # 3. PROSES ABSENSI (SESUAI STRUKTUR TABELMU)
+        # 3. PERSIAPAN WAKTU
         # ============================================
-        # Tentukan Zona Waktu Jakarta
         tz_jakarta = pytz.timezone('Asia/Jakarta')
-        
-        # Ambil waktu sekarang sesuai WIB
         now = datetime.now(tz_jakarta) 
-        
         today = now.date()
 
-        # --- Cek apakah SUDAH check-in hari ini
-        # Format filter tanggal juga harus sesuai
+        # ============================================
+        # 4. CEK STATUS CHECK-IN HARI INI
+        # ============================================
         checkin_res = supabase.table('attendance_records') \
             .select('*') \
             .eq('employee_id', employee['id']) \
@@ -317,47 +314,65 @@ def record_attendance():
         today_checkin = checkin_res.data if checkin_res and checkin_res.data else None
 
         # ============================================
-        # 4. CHECK IN
+        # 5. LOGIKA ABSENSI
         # ============================================
+        
+        # --- SKENARIO A: BELUM CHECK-IN ---
         if today_checkin is None:
-            # check_in_time otomatis sudah dalam WIB karena variable 'now' sudah WIB
             check_in_time = now.time()
-
-            # Tentukan status absensi
             status = "Telat" if check_in_time > BATAS_TELAT else "Tepat Waktu"
 
+            # Simpan Check-In (Penting: pakai .select() biar return data)
             supabase.table('attendance_records').insert({
                 "employee_id": employee['id'],
-                "timestamp": now.isoformat(),   # Ini akan mengirim format waktu dengan +07:00
+                "timestamp": now.isoformat(),
                 "type": "check_in",
                 "attendance_status": status
-            }).execute()
+            }).select().execute()
 
             return jsonify({
                 "success": True,
                 "message": "Check-in Berhasil!",
                 "status": status,
-                "time": now.strftime("%H:%M"), # Kirim balik jam yang benar ke frontend
+                "time": now.strftime("%H:%M"),
                 "details": api_result
             }), 200
 
-        # ============================================
-        # 5. CHECK OUT
-        # ============================================
-        supabase.table('attendance_records').insert({
-            "employee_id": employee['id'],
-            "timestamp": now.isoformat(),
-            "type": "check_out",
-            "attendance_status": "Hadir"
-        }).execute()
+        # --- SKENARIO B: SUDAH CHECK-IN (LANJUT CEK CHECK-OUT) ---
+        else:
+            # Cek apakah SUDAH check-out hari ini?
+            checkout_res = supabase.table('attendance_records') \
+                .select('*') \
+                .eq('employee_id', employee['id']) \
+                .eq('type', 'check_out') \
+                .filter('timestamp', 'gte', f"{today}T00:00:00") \
+                .maybe_single() \
+                .execute()
+            
+            today_checkout = checkout_res.data if checkout_res and checkout_res.data else None
 
-        return jsonify({
-            "success": True,
-            "message": "Check-out Berhasil!",
-            "status": "Hadir",
-            "time": now.strftime("%H:%M"),
-            "details": api_result
-        }), 200
+            # JIKA SUDAH ADA DATA CHECK-OUT -> BLOCK (GABOLEH ABSEN LAGI)
+            if today_checkout:
+                return jsonify({
+                    "error": "Anda sudah selesai absen hari ini (Sudah Check-Out/Pulang).",
+                    "status": "Selesai"
+                }), 400
+
+            # JIKA BELUM ADA DATA CHECK-OUT -> LAKUKAN CHECK-OUT
+            supabase.table('attendance_records').insert({
+                "employee_id": employee['id'],
+                "timestamp": now.isoformat(),
+                "type": "check_out",
+                "attendance_status": "Hadir"
+            }).select().execute() # Pakai .select()
+
+            return jsonify({
+                "success": True,
+                "message": "Check-out Berhasil!",
+                "status": "Hadir",
+                "time": now.strftime("%H:%M"),
+                "details": api_result
+            }), 200
 
     except Exception as e:
         print("ERROR:", e)
