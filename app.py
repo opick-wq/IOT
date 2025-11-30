@@ -263,24 +263,48 @@ def record_attendance():
         if not rfid_uid or not live_image:
             return jsonify({"error": "Data tidak lengkap"}), 400
 
-        # ... (Bagian 1 & 2: Ambil Karyawan & Verifikasi Wajah TETAP SAMA) ...
-        # Saya skip biar tidak kepanjangan, copy dari kode sebelumnya
-        
-        emp_res = supabase.table('employees').select('id, name').eq('rfid_uid', rfid_uid).single().execute()
-        if not emp_res or not emp_res.data: return jsonify({"error": "ID Karyawan tidak ditemukan"}), 404
+        # ============================================
+        # 1. AMBIL DATA KARYAWAN
+        # ============================================
+        emp_res = supabase.table('employees') \
+            .select('id, name') \
+            .eq('rfid_uid', rfid_uid) \
+            .single() \
+            .execute()
+
+        if not emp_res or not emp_res.data:
+            return jsonify({"error": "ID Karyawan tidak ditemukan"}), 404
+
         employee = emp_res.data
 
-        # ... (Logika verifikasi wajah di sini) ...
-        # Anggap kode verifikasi wajah sudah ada di sini
+        # ============================================
+        # 2. VERIFIKASI WAJAH KE API TEMAN
+        # ============================================
+        files = {'file': (live_image.filename, live_image.stream, live_image.mimetype)}
+        data = {'user_id': rfid_uid}
+
+        try:
+            api_response = requests.post(FRIEND_API_URL, files=files, data=data, timeout=30)
+            api_result = api_response.json() if api_response.content else {}
+        except:
+            return jsonify({"error": "Gagal menghubungi server AI"}), 502
+
+        if api_response.status_code != 200:
+            return jsonify({"error": "Wajah tidak cocok", "details": api_result}), 401
 
         # ============================================
-        # 3. PERSIAPAN WAKTU & DATABASE CHECK
+        # 3. PROSES ABSENSI (SESUAI STRUKTUR TABELMU)
         # ============================================
+        # Tentukan Zona Waktu Jakarta
         tz_jakarta = pytz.timezone('Asia/Jakarta')
+        
+        # Ambil waktu sekarang sesuai WIB
         now = datetime.now(tz_jakarta) 
+        
         today = now.date()
 
-        # Cek record check-in hari ini
+        # --- Cek apakah SUDAH check-in hari ini
+        # Format filter tanggal juga harus sesuai
         checkin_res = supabase.table('attendance_records') \
             .select('*') \
             .eq('employee_id', employee['id']) \
@@ -293,70 +317,52 @@ def record_attendance():
         today_checkin = checkin_res.data if checkin_res and checkin_res.data else None
 
         # ============================================
-        # 4. LOGIKA ABSENSI (DENGAN FIX .select())
+        # 4. CHECK IN
         # ============================================
-        
-        # KONDISI 1: BELUM CHECK-IN
         if today_checkin is None:
+            # check_in_time otomatis sudah dalam WIB karena variable 'now' sudah WIB
             check_in_time = now.time()
+
+            # Tentukan status absensi
             status = "Telat" if check_in_time > BATAS_TELAT else "Tepat Waktu"
 
-            # === [FIX DISINI] ===
-            # Tambahkan .select() setelah insert dan sebelum execute
             supabase.table('attendance_records').insert({
                 "employee_id": employee['id'],
-                "timestamp": now.isoformat(),
+                "timestamp": now.isoformat(),   # Ini akan mengirim format waktu dengan +07:00
                 "type": "check_in",
                 "attendance_status": status
-            }).select().execute() 
+            }).execute()
 
             return jsonify({
                 "success": True,
                 "message": "Check-in Berhasil!",
                 "status": status,
-                "time": now.strftime("%H:%M")
+                "time": now.strftime("%H:%M"), # Kirim balik jam yang benar ke frontend
+                "details": api_result
             }), 200
 
-        # KONDISI 2: SUDAH CHECK-IN
-        else:
-            # Cek apakah sudah check-out?
-            checkout_res = supabase.table('attendance_records') \
-                .select('*') \
-                .eq('employee_id', employee['id']) \
-                .eq('type', 'check_out') \
-                .filter('timestamp', 'gte', f"{today}T00:00:00") \
-                .maybe_single() \
-                .execute()
-            
-            today_checkout = checkout_res.data if checkout_res and checkout_res.data else None
+        # ============================================
+        # 5. CHECK OUT
+        # ============================================
+        supabase.table('attendance_records').insert({
+            "employee_id": employee['id'],
+            "timestamp": now.isoformat(),
+            "type": "check_out",
+            "attendance_status": "Hadir"
+        }).execute()
 
-            if today_checkout:
-                return jsonify({
-                    "error": "Anda sudah selesai absen hari ini (Sudah Check-Out).",
-                    "status": "Selesai"
-                }), 400
-
-            # === [FIX DISINI JUGA] ===
-            # Tambahkan .select() agar tidak error 204
-            supabase.table('attendance_records').insert({
-                "employee_id": employee['id'],
-                "timestamp": now.isoformat(),
-                "type": "check_out",
-                "attendance_status": "Hadir"
-            }).select().execute()
-
-            return jsonify({
-                "success": True,
-                "message": "Check-out Berhasil!",
-                "status": "Hadir",
-                "time": now.strftime("%H:%M")
-            }), 200
+        return jsonify({
+            "success": True,
+            "message": "Check-out Berhasil!",
+            "status": "Hadir",
+            "time": now.strftime("%H:%M"),
+            "details": api_result
+        }), 200
 
     except Exception as e:
         print("ERROR:", e)
         return jsonify({"error": str(e)}), 500
-    
-    
+
 @app.route('/api/employees-full-list', methods=['GET'])
 def get_employees_full_list():
     try:
