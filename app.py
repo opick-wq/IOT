@@ -253,7 +253,8 @@ def get_employee_data():
 
 # 7. API CATAT ABSENSI (VERIFIKASI WAJAH)
 # Konfigurasi Jam Masuk (untuk status otomatis)
-BATAS_TELAT = time(23, 0, 0) 
+BATAS_TELAT = time(23, 0, 0)
+
 @app.route('/api/record-attendance', methods=['POST'])
 def record_attendance():
     try:
@@ -293,42 +294,44 @@ def record_attendance():
             return jsonify({"error": "Wajah tidak cocok", "details": api_result}), 401
 
         # ============================================
-        # 3. PROSES ABSENSI (SESUAI STRUKTUR TABELMU)
+        # 3. PROSES ABSENSI
         # ============================================
-        # Tentukan Zona Waktu Jakarta
         tz_jakarta = pytz.timezone('Asia/Jakarta')
-        
-        # Ambil waktu sekarang sesuai WIB
-        now = datetime.now(tz_jakarta) 
-        
+        now = datetime.now(tz_jakarta)
         today = now.date()
 
-        # --- Cek apakah SUDAH check-in hari ini
-        # Format filter tanggal juga harus sesuai
-        checkin_res = supabase.table('attendance_records') \
+        # AMBIL SEMUA ABSENSI HARI INI
+        today_att = supabase.table('attendance_records') \
             .select('*') \
             .eq('employee_id', employee['id']) \
-            .eq('type', 'check_in') \
             .filter('timestamp', 'gte', f"{today}T00:00:00") \
-            .order('timestamp', desc=False) \
-            .maybe_single() \
+            .order('timestamp', asc=True) \
             .execute()
 
-        today_checkin = checkin_res.data if checkin_res and checkin_res.data else None
+        records_today = today_att.data or []
+
+        # Hitung jumlah check-in & check-out
+        total_checkin = sum(1 for r in records_today if r['type'] == 'check_in')
+        total_checkout = sum(1 for r in records_today if r['type'] == 'check_out')
 
         # ============================================
-        # 4. CHECK IN
+        # 4. BATAS 2 ABSENSI PER HARI
         # ============================================
-        if today_checkin is None:
-            # check_in_time otomatis sudah dalam WIB karena variable 'now' sudah WIB
+        if total_checkin >= 1 and total_checkout >= 1:
+            return jsonify({
+                "error": "Anda sudah melakukan check-in dan check-out hari ini. Tidak bisa absen lagi."
+            }), 403
+
+        # ============================================
+        # 5. CHECK-IN
+        # ============================================
+        if total_checkin == 0:
             check_in_time = now.time()
-
-            # Tentukan status absensi
             status = "Telat" if check_in_time > BATAS_TELAT else "Tepat Waktu"
 
             supabase.table('attendance_records').insert({
                 "employee_id": employee['id'],
-                "timestamp": now.isoformat(),   # Ini akan mengirim format waktu dengan +07:00
+                "timestamp": now.isoformat(),
                 "type": "check_in",
                 "attendance_status": status
             }).execute()
@@ -337,31 +340,33 @@ def record_attendance():
                 "success": True,
                 "message": "Check-in Berhasil!",
                 "status": status,
-                "time": now.strftime("%H:%M"), # Kirim balik jam yang benar ke frontend
+                "time": now.strftime("%H:%M"),
                 "details": api_result
             }), 200
 
         # ============================================
-        # 5. CHECK OUT
+        # 6. CHECK-OUT
         # ============================================
-        supabase.table('attendance_records').insert({
-            "employee_id": employee['id'],
-            "timestamp": now.isoformat(),
-            "type": "check_out",
-            "attendance_status": "Hadir"
-        }).execute()
+        if total_checkout == 0:
+            supabase.table('attendance_records').insert({
+                "employee_id": employee['id'],
+                "timestamp": now.isoformat(),
+                "type": "check_out",
+                "attendance_status": "Hadir"
+            }).execute()
 
-        return jsonify({
-            "success": True,
-            "message": "Check-out Berhasil!",
-            "status": "Hadir",
-            "time": now.strftime("%H:%M"),
-            "details": api_result
-        }), 200
+            return jsonify({
+                "success": True,
+                "message": "Check-out Berhasil!",
+                "status": "Hadir",
+                "time": now.strftime("%H:%M"),
+                "details": api_result
+            }), 200
 
     except Exception as e:
         print("ERROR:", e)
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/employees-full-list', methods=['GET'])
 def get_employees_full_list():
