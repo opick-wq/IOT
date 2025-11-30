@@ -252,8 +252,7 @@ def get_employee_data():
 
 # 7. API CATAT ABSENSI (VERIFIKASI WAJAH)
 # Konfigurasi Jam Masuk (untuk status otomatis)
-JAM_MASUK_BATAS = time(23, 0, 0) 
-@app.route('/api/record-attendance', methods=['POST'])
+BATAS_TELAT = time(23, 0, 0) 
 @app.route('/api/record-attendance', methods=['POST'])
 def record_attendance():
     try:
@@ -263,59 +262,65 @@ def record_attendance():
         if not rfid_uid or not live_image:
             return jsonify({"error": "Data tidak lengkap"}), 400
 
-        # 1. Ambil data karyawan
-        emp = supabase.table('employees') \
+        # ============================================
+        # 1. AMBIL DATA KARYAWAN
+        # ============================================
+        emp_res = supabase.table('employees') \
             .select('id, name') \
             .eq('rfid_uid', rfid_uid) \
             .single() \
             .execute()
 
-        if not emp.data:
+        if not emp_res or not emp_res.data:
             return jsonify({"error": "ID Karyawan tidak ditemukan"}), 404
 
-        employee = emp.data
+        employee = emp_res.data
 
-        # 2. Kirim ke API wajah
+        # ============================================
+        # 2. VERIFIKASI WAJAH KE API TEMAN
+        # ============================================
         files = {'file': (live_image.filename, live_image.stream, live_image.mimetype)}
         data = {'user_id': rfid_uid}
 
         try:
             api_response = requests.post(FRIEND_API_URL, files=files, data=data, timeout=30)
-            api_result = api_response.json()
+            api_result = api_response.json() if api_response.content else {}
         except:
             return jsonify({"error": "Gagal menghubungi server AI"}), 502
 
-        # Jika wajah tidak cocok
         if api_response.status_code != 200:
             return jsonify({"error": "Wajah tidak cocok", "details": api_result}), 401
 
-        # 3. PROSES ABSENSI SESUAI TABELMU
-        now = datetime.now()  # Ini otomatis WIB jika servermu WIB
+        # ============================================
+        # 3. PROSES ABSENSI (SESUAI STRUKTUR TABELMU)
+        # ============================================
+        now = datetime.now()
         today = now.date()
 
-        # Cek apakah sudah check-in hari ini
-        today_checkin = supabase.table('attendance_records') \
+        # --- Cek apakah SUDAH check-in hari ini
+        checkin_res = supabase.table('attendance_records') \
             .select('*') \
             .eq('employee_id', employee['id']) \
             .eq('type', 'check_in') \
             .filter('timestamp', 'gte', f"{today}T00:00:00") \
             .order('timestamp', desc=False) \
             .maybe_single() \
-            .execute() \
-            .data
+            .execute()
 
+        today_checkin = checkin_res.data if checkin_res and checkin_res.data else None
+
+        # ============================================
+        # 4. CHECK IN
+        # ============================================
         if today_checkin is None:
-            # ============================
-            #    CHECK IN
-            # ============================
             check_in_time = now.time()
 
-            # Tentukan status
+            # Tentukan status absensi
             status = "Telat" if check_in_time > BATAS_TELAT else "Hadir"
 
             supabase.table('attendance_records').insert({
                 "employee_id": employee['id'],
-                "timestamp": now.isoformat(),
+                "timestamp": now.isoformat(),   # WIB
                 "type": "check_in",
                 "attendance_status": status
             }).execute()
@@ -327,25 +332,25 @@ def record_attendance():
                 "details": api_result
             }), 200
 
-        else:
-            # ============================
-            #    CHECK OUT
-            # ============================
-            supabase.table('attendance_records').insert({
-                "employee_id": employee['id'],
-                "timestamp": now.isoformat(),
-                "type": "check_out",
-                "attendance_status": "Hadir"
-            }).execute()
+        # ============================================
+        # 5. CHECK OUT
+        # ============================================
+        supabase.table('attendance_records').insert({
+            "employee_id": employee['id'],
+            "timestamp": now.isoformat(),
+            "type": "check_out",
+            "attendance_status": "Hadir"
+        }).execute()
 
-            return jsonify({
-                "success": True,
-                "message": "Check-out Berhasil!",
-                "status": "Hadir",
-                "details": api_result
-            }), 200
+        return jsonify({
+            "success": True,
+            "message": "Check-out Berhasil!",
+            "status": "Hadir",
+            "details": api_result
+        }), 200
 
     except Exception as e:
+        print("ERROR:", e)
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/employees-full-list', methods=['GET'])
