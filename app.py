@@ -5,6 +5,7 @@ from flask_cors import CORS
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from datetime import datetime, time
+import pytz
 
 load_dotenv()
 
@@ -252,7 +253,7 @@ def get_employee_data():
 
 # 7. API CATAT ABSENSI (VERIFIKASI WAJAH)
 # Konfigurasi Jam Masuk (untuk status otomatis)
-JAM_MASUK_BATAS = time(23, 0, 0) 
+JAM_MASUK_BATAS = time(15, 0, 0) 
 @app.route('/api/record-attendance', methods=['POST'])
 def record_attendance():
     try:
@@ -275,14 +276,37 @@ def record_attendance():
             api_data = api_res.json()
         except:
             return jsonify({"error": "Gagal koneksi ke server AI"}), 502
+        
+        # --- UPDATE 2: LOGIKA THRESHOLD KEMIRIPAN ---
+        MIN_ACCURACY = 0.60
+        
+        # Ambil nilai similarity, default ke 0 jika error
+        try:
+            # Pastikan mengambil key yang benar dari API FaceHugging (biasanya 'similarity')
+            current_score = float(api_data.get('similarity', 0))
+        except (ValueError, TypeError):
+            current_score = 0
+            
+        # Cek jika score di bawah 0.60
+        if current_score < MIN_ACCURACY:
+             return jsonify({
+                "error": "Wajah tidak terverifikasi (Akurasi Rendah)", 
+                "score": current_score,
+                "threshold_needed": MIN_ACCURACY,
+                "details": api_data
+            }), 401
+        # -----------------------------------------------
 
         if api_res.status_code != 200:
             return jsonify({"error": "Wajah tidak cocok", "details": api_data}), 401
 
-        # Waktu sekarang
-        now = datetime.now()
+        # --- UPDATE 3: LOGIKA TIMEZONE (WIB) ---
+        wib = pytz.timezone('Asia/Jakarta')
+        now = datetime.now(wib) # Menggunakan waktu server Jakarta
+        
         today_str = now.strftime("%Y-%m-%d")
         current_time = now.time()
+        # ---------------------------------------
 
         # Cari record hari ini
         today_records = supabase.table("attendance_records") \
@@ -313,7 +337,7 @@ def record_attendance():
         # Insert record
         supabase.table('attendance_records').insert({
             "employee_id": employee["id"],
-            "timestamp": now.isoformat(),
+            "timestamp": now.isoformat(), # Format ISO dengan Timezone info
             "type": att_type,
             "attendance_status": status_ket
         }).execute()
@@ -323,6 +347,7 @@ def record_attendance():
             "success": True,
             "message": f"Absensi {att_type} berhasil",
             "attendance_status": status_ket,
+            "score": current_score, # Mengembalikan nilai score ke frontend untuk info
             "details": api_data
         }), 200
 
