@@ -263,13 +263,18 @@ def record_attendance():
             return jsonify({"error": "Data tidak lengkap"}), 400
 
         # 1. Cek Karyawan
-        emp_response = supabase.table('employees').select('id, name').eq('rfid_uid', rfid_uid).single().execute()
+        emp_response = supabase.table('employees')\
+            .select('id, name')\
+            .eq('rfid_uid', rfid_uid)\
+            .single()\
+            .execute()
+
         if not emp_response.data:
-             return jsonify({"error": "ID Karyawan tidak ditemukan."}), 404
-        
+            return jsonify({"error": "ID Karyawan tidak ditemukan."}), 404
+
         employee = emp_response.data
 
-        # 2. Kirim ke API Teman
+        # 2. Kirim ke API Teman (AI)
         files = {'file': (live_image.filename, live_image.stream, live_image.mimetype)}
         data = {'user_id': rfid_uid}
 
@@ -280,27 +285,49 @@ def record_attendance():
                 api_result = api_response.json()
             except:
                 pass
-        except Exception as api_err:
+        except Exception:
             return jsonify({"error": "Gagal menghubungi server AI."}), 502
 
-        # 3. Cek Hasil AI
+        # 3. Cek hasil AI
         if api_response.status_code != 200:
-             return jsonify({
-                 "error": "Wajah tidak cocok", 
-                 "details": api_result 
-             }), 401
-        
-        # 4. Catat Absensi
-        today = datetime.now().strftime('%Y-%m-%d')
-        rec_response = supabase.table('attendance_records').select('id').eq('employee_id', employee['id']).filter('timestamp', 'gte', f"{today}T00:00:00").execute()
-        att_type = 'check_out' if rec_response.data else 'check_in'
-        
+            return jsonify({
+                "error": "Wajah tidak cocok",
+                "details": api_result
+            }), 401
+
+        # =============== PERBAIKAN UTAMA ====================
+        # 4. Tentukan Jenis Absensi Berdasarkan Jam
+        now = datetime.now()
+        today = now.date()
+        now_time = now.time()
+
+        # Cek apakah sudah pernah absen hari ini
+        rec_response = supabase.table('attendance_records')\
+            .select('id')\
+            .eq('employee_id', employee['id'])\
+            .filter('timestamp', 'gte', f"{today}T00:00:00")\
+            .execute()
+
+        # Logika penentuan check-in / check-out
+        if not rec_response.data:
+            # Belum pernah absen hari ini → check-in
+            att_type = 'check_in'
+        else:
+            # Sudah pernah absen → tentukan berdasarkan jam
+            if now_time >= JAM_MASUK_BATAS:
+                att_type = 'check_out'
+            else:
+                att_type = 'check_out'  # Jika aturanmu beda, tinggal ubah di sini
+
+        # 5. Simpan absensi
         supabase.table('attendance_records').insert({
-            'employee_id': employee['id'], 'type': att_type
+            'employee_id': employee['id'],
+            'type': att_type,
+            'timestamp': now.isoformat()   # pastikan timestamp benar & sesuai lokal
         }).execute()
 
         return jsonify({
-            "success": True, 
+            "success": True,
             "message": f"Absensi '{att_type}' Berhasil!",
             "details": api_result
         }), 200
