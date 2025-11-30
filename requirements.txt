@@ -3,4 +3,5 @@ supabase
 requests
 python-dotenv
 flask-cors
+pytz
 #numpy
