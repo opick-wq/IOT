@@ -255,78 +255,61 @@ def get_employee_data():
 # Konfigurasi Jam Masuk (untuk status otomatis)
 # --- 7. API CATAT ABSENSI (DENGAN LOGIKA THRESHOLD KETAT) ---
 JAM_MASUK_BATAS = time(23, 0, 0) # Sesuaikan jam masuk
+# Pastikan library ini sudah di-import di paling atas file
+# import pytz 
+# from datetime import datetime, time
+
+# Sesuaikan jam masuk (misal jam 8 pagi)
+JAM_MASUK_BATAS = time(23, 0, 0) 
 
 @app.route('/api/record-attendance', methods=['POST'])
 def record_attendance():
     try:
-        # 1. Terima Data dari Frontend
+        # 1. Terima Data
         rfid_uid = request.form.get('rfid')
         live_image = request.files.get('live_image')
 
-        # 2. Cari Karyawan di Database
+        # 2. Cek Karyawan
         emp_resp = supabase.table('employees').select('id, name').eq('rfid_uid', rfid_uid).single().execute()
         if not emp_resp.data:
-            return jsonify({"error": "ID Karyawan tidak ditemukan di database"}), 404
+            return jsonify({"error": "ID Karyawan tidak ditemukan"}), 404
 
         employee = emp_resp.data
 
-        # 3. Kirim Foto ke Server AI (FaceHugging)
+        # 3. Kirim ke API AI (FaceHugging)
         files = {'file': (live_image.filename, live_image.stream, live_image.mimetype)}
         data = {'user_id': rfid_uid}
 
         try:
             api_res = requests.post(FRIEND_API_URL, files=files, data=data, timeout=30)
             api_data = api_res.json()
-            
-            # Debugging di Terminal (Sama seperti console.log di JS)
-            print(f"\n[AI CHECK] Response dari Server AI: {api_data}")
-
-        except Exception as e:
-            print(f"[ERROR] Koneksi AI Gagal: {e}")
+        except:
             return jsonify({"error": "Gagal koneksi ke server AI"}), 502
 
-        # ============================================================
-        # 🔥 LOGIKA THRESHOLD (SATPAM WAJAH) 🔥
-        # ============================================================
-        
-        # Ambang Batas Minimal (Sama seperti di JS Anda: 0.60)
-        MIN_THRESHOLD = 0.60  
+        # --- PENTING: AMBIL SCORE UNTUK DIKIRIM KE FRONTEND ---
+        # Kita ambil nilai similarity, default 0 jika gagal baca
+        try:
+            # FaceHugging biasanya pakai key 'similarity' atau 'score'
+            current_score = float(api_data.get('similarity', api_data.get('score', 0)))
+        except:
+            current_score = 0.0
 
-        # Ambil nilai score/similarity dari respons API
-        # Kita cari field 'similarity' atau 'score'. Default 0 jika error.
-        current_score = float(api_data.get('similarity', api_data.get('score', 0)))
-
-        print(f"[AI CHECK] Score: {current_score} | Batas: {MIN_THRESHOLD}")
-
-        # LOGIKA PENOLAKAN:
-        # Jika score kurang dari 0.60, LANGSUNG TOLAK (Error 401)
-        if current_score < MIN_THRESHOLD:
-            pesan_error = f"Wajah tidak cukup mirip (Akurasi: {current_score:.2f}, Butuh: {MIN_THRESHOLD})"
-            print(f"[REJECT] {pesan_error}")
-            
-            return jsonify({
-                "success": False,
-                "error": "Verifikasi Wajah Gagal", 
-                "message": pesan_error,
-                "score": current_score,
-                "threshold_needed": MIN_THRESHOLD
-            }), 401
-        
-        # Cek jika server AI sendiri mengembalikan error (misal wajah tidak terdeteksi)
+        # Cek Dasar: Jika API AI sendiri bilang Error/Wajah Salah (Status bukan 200)
         if api_res.status_code != 200:
-            return jsonify({"error": "Wajah tidak cocok / Tidak terdeteksi", "details": api_data}), 401
-
-        # ============================================================
-        # ✅ JIKA LOLOS THRESHOLD, LANJUT ABSEN
-        # ============================================================
+            return jsonify({
+                "error": "Wajah tidak dikenali oleh sistem AI", 
+                "details": api_data,
+                "score": current_score
+            }), 401
 
         # 4. Atur Zona Waktu (WIB)
+        # Agar jam masuk di database sesuai waktu Indonesia
         wib = pytz.timezone('Asia/Jakarta')
         now = datetime.now(wib)
         today_str = now.strftime("%Y-%m-%d")
         current_time = now.time()
 
-        # 5. Cek apakah sudah absen hari ini?
+        # 5. Cek Riwayat Absen Hari Ini
         today_records = supabase.table("attendance_records") \
             .select("id, type") \
             .eq("employee_id", employee["id"]) \
@@ -337,6 +320,7 @@ def record_attendance():
         has_check_in = any(r["type"] == "check_in" for r in today_records)
         has_check_out = any(r["type"] == "check_out" for r in today_records)
 
+        # Tolak jika sudah absen lengkap
         if has_check_in and has_check_out:
             return jsonify({
                 "error": "Anda sudah absen lengkap (Masuk & Pulang) hari ini.",
@@ -344,7 +328,7 @@ def record_attendance():
                 "score": current_score
             }), 400
 
-        # 6. Tentukan Masuk atau Pulang
+        # 6. Tentukan Check-In atau Check-Out
         if not has_check_in:
             att_type = "check_in"
             status_ket = "Tepat Waktu" if current_time <= JAM_MASUK_BATAS else "Terlambat"
@@ -360,19 +344,19 @@ def record_attendance():
             "attendance_status": status_ket
         }).execute()
 
-        print(f"[SUCCESS] Absen {att_type} berhasil untuk {employee['name']}")
-
+        # 8. RESPONSE KE FRONTEND
+        # Di sini kita kirim 'score' agar Frontend bisa melakukan validasi threshold (0.60)
         return jsonify({
             "success": True,
             "message": f"Absensi {att_type} Berhasil!",
             "attendance_status": status_ket,
-            "score": current_score, # Kirim balik score supaya bisa ditampilkan di frontend
+            "score": current_score,  # <--- INI KUNCINYA
             "details": api_data
         }), 200
 
     except Exception as e:
-        print(f"[SYSTEM ERROR] {e}")
-        return jsonify({"error": f"Terjadi kesalahan sistem: {str(e)}"}), 500
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
     
 
 @app.route('/api/employees-full-list', methods=['GET'])
