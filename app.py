@@ -253,62 +253,80 @@ def get_employee_data():
 
 # 7. API CATAT ABSENSI (VERIFIKASI WAJAH)
 # Konfigurasi Jam Masuk (untuk status otomatis)
-JAM_MASUK_BATAS = time(15, 0, 0) 
+# --- 7. API CATAT ABSENSI (DENGAN LOGIKA THRESHOLD KETAT) ---
+JAM_MASUK_BATAS = time(23, 0, 0) # Sesuaikan jam masuk
+
 @app.route('/api/record-attendance', methods=['POST'])
 def record_attendance():
     try:
+        # 1. Terima Data dari Frontend
         rfid_uid = request.form.get('rfid')
         live_image = request.files.get('live_image')
 
-        # Cari karyawan
+        # 2. Cari Karyawan di Database
         emp_resp = supabase.table('employees').select('id, name').eq('rfid_uid', rfid_uid).single().execute()
         if not emp_resp.data:
-            return jsonify({"error": "ID tidak ditemukan"}), 404
+            return jsonify({"error": "ID Karyawan tidak ditemukan di database"}), 404
 
         employee = emp_resp.data
 
-        # Kirim ke API verifikasi wajah
+        # 3. Kirim Foto ke Server AI (FaceHugging)
         files = {'file': (live_image.filename, live_image.stream, live_image.mimetype)}
         data = {'user_id': rfid_uid}
 
         try:
             api_res = requests.post(FRIEND_API_URL, files=files, data=data, timeout=30)
             api_data = api_res.json()
-        except:
-            return jsonify({"error": "Gagal koneksi ke server AI"}), 502
-        
-        # --- UPDATE 2: LOGIKA THRESHOLD KEMIRIPAN ---
-        MIN_ACCURACY = 0.60
-        
-        # Ambil nilai similarity, default ke 0 jika error
-        try:
-            # Pastikan mengambil key yang benar dari API FaceHugging (biasanya 'similarity')
-            current_score = float(api_data.get('similarity', 0))
-        except (ValueError, TypeError):
-            current_score = 0
             
-        # Cek jika score di bawah 0.60
-        if current_score < MIN_ACCURACY:
-             return jsonify({
-                "error": "Wajah tidak terverifikasi (Akurasi Rendah)", 
-                "score": current_score,
-                "threshold_needed": MIN_ACCURACY,
-                "details": api_data
-            }), 401
-        # -----------------------------------------------
+            # Debugging di Terminal (Sama seperti console.log di JS)
+            print(f"\n[AI CHECK] Response dari Server AI: {api_data}")
 
-        if api_res.status_code != 200:
-            return jsonify({"error": "Wajah tidak cocok", "details": api_data}), 401
+        except Exception as e:
+            print(f"[ERROR] Koneksi AI Gagal: {e}")
+            return jsonify({"error": "Gagal koneksi ke server AI"}), 502
 
-        # --- UPDATE 3: LOGIKA TIMEZONE (WIB) ---
-        wib = pytz.timezone('Asia/Jakarta')
-        now = datetime.now(wib) # Menggunakan waktu server Jakarta
+        # ============================================================
+        # 🔥 LOGIKA THRESHOLD (SATPAM WAJAH) 🔥
+        # ============================================================
         
+        # Ambang Batas Minimal (Sama seperti di JS Anda: 0.60)
+        MIN_THRESHOLD = 0.60  
+
+        # Ambil nilai score/similarity dari respons API
+        # Kita cari field 'similarity' atau 'score'. Default 0 jika error.
+        current_score = float(api_data.get('similarity', api_data.get('score', 0)))
+
+        print(f"[AI CHECK] Score: {current_score} | Batas: {MIN_THRESHOLD}")
+
+        # LOGIKA PENOLAKAN:
+        # Jika score kurang dari 0.60, LANGSUNG TOLAK (Error 401)
+        if current_score < MIN_THRESHOLD:
+            pesan_error = f"Wajah tidak cukup mirip (Akurasi: {current_score:.2f}, Butuh: {MIN_THRESHOLD})"
+            print(f"[REJECT] {pesan_error}")
+            
+            return jsonify({
+                "success": False,
+                "error": "Verifikasi Wajah Gagal", 
+                "message": pesan_error,
+                "score": current_score,
+                "threshold_needed": MIN_THRESHOLD
+            }), 401
+        
+        # Cek jika server AI sendiri mengembalikan error (misal wajah tidak terdeteksi)
+        if api_res.status_code != 200:
+            return jsonify({"error": "Wajah tidak cocok / Tidak terdeteksi", "details": api_data}), 401
+
+        # ============================================================
+        # ✅ JIKA LOLOS THRESHOLD, LANJUT ABSEN
+        # ============================================================
+
+        # 4. Atur Zona Waktu (WIB)
+        wib = pytz.timezone('Asia/Jakarta')
+        now = datetime.now(wib)
         today_str = now.strftime("%Y-%m-%d")
         current_time = now.time()
-        # ---------------------------------------
 
-        # Cari record hari ini
+        # 5. Cek apakah sudah absen hari ini?
         today_records = supabase.table("attendance_records") \
             .select("id, type") \
             .eq("employee_id", employee["id"]) \
@@ -319,14 +337,14 @@ def record_attendance():
         has_check_in = any(r["type"] == "check_in" for r in today_records)
         has_check_out = any(r["type"] == "check_out" for r in today_records)
 
-        # ❗ Blokir bila sudah check-in & check-out
         if has_check_in and has_check_out:
             return jsonify({
-                "error": "Hari ini sudah lengkap absen (check-in & check-out)",
-                "status": "Hadir"
+                "error": "Anda sudah absen lengkap (Masuk & Pulang) hari ini.",
+                "status": "Hadir",
+                "score": current_score
             }), 400
 
-        # Tentukan jenis absensi
+        # 6. Tentukan Masuk atau Pulang
         if not has_check_in:
             att_type = "check_in"
             status_ket = "Tepat Waktu" if current_time <= JAM_MASUK_BATAS else "Terlambat"
@@ -334,25 +352,27 @@ def record_attendance():
             att_type = "check_out"
             status_ket = "Hadir"
 
-        # Insert record
+        # 7. Simpan ke Database
         supabase.table('attendance_records').insert({
             "employee_id": employee["id"],
-            "timestamp": now.isoformat(), # Format ISO dengan Timezone info
+            "timestamp": now.isoformat(),
             "type": att_type,
             "attendance_status": status_ket
         }).execute()
 
-        # Response
+        print(f"[SUCCESS] Absen {att_type} berhasil untuk {employee['name']}")
+
         return jsonify({
             "success": True,
-            "message": f"Absensi {att_type} berhasil",
+            "message": f"Absensi {att_type} Berhasil!",
             "attendance_status": status_ket,
-            "score": current_score, # Mengembalikan nilai score ke frontend untuk info
+            "score": current_score, # Kirim balik score supaya bisa ditampilkan di frontend
             "details": api_data
         }), 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"[SYSTEM ERROR] {e}")
+        return jsonify({"error": f"Terjadi kesalahan sistem: {str(e)}"}), 500
     
 
 @app.route('/api/employees-full-list', methods=['GET'])
