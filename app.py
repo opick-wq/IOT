@@ -5,6 +5,7 @@ from flask_cors import CORS
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from datetime import datetime, time
+import pytz
 
 load_dotenv()
 
@@ -294,10 +295,16 @@ def record_attendance():
         # ============================================
         # 3. PROSES ABSENSI (SESUAI STRUKTUR TABELMU)
         # ============================================
-        now = datetime.now()
+        # Tentukan Zona Waktu Jakarta
+        tz_jakarta = pytz.timezone('Asia/Jakarta')
+        
+        # Ambil waktu sekarang sesuai WIB
+        now = datetime.now(tz_jakarta) 
+        
         today = now.date()
 
         # --- Cek apakah SUDAH check-in hari ini
+        # Format filter tanggal juga harus sesuai
         checkin_res = supabase.table('attendance_records') \
             .select('*') \
             .eq('employee_id', employee['id']) \
@@ -313,6 +320,7 @@ def record_attendance():
         # 4. CHECK IN
         # ============================================
         if today_checkin is None:
+            # check_in_time otomatis sudah dalam WIB karena variable 'now' sudah WIB
             check_in_time = now.time()
 
             # Tentukan status absensi
@@ -320,7 +328,7 @@ def record_attendance():
 
             supabase.table('attendance_records').insert({
                 "employee_id": employee['id'],
-                "timestamp": now.isoformat(),   # WIB
+                "timestamp": now.isoformat(),   # Ini akan mengirim format waktu dengan +07:00
                 "type": "check_in",
                 "attendance_status": status
             }).execute()
@@ -329,6 +337,7 @@ def record_attendance():
                 "success": True,
                 "message": "Check-in Berhasil!",
                 "status": status,
+                "time": now.strftime("%H:%M"), # Kirim balik jam yang benar ke frontend
                 "details": api_result
             }), 200
 
@@ -346,6 +355,7 @@ def record_attendance():
             "success": True,
             "message": "Check-out Berhasil!",
             "status": "Hadir",
+            "time": now.strftime("%H:%M"),
             "details": api_result
         }), 200
 
