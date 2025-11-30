@@ -259,71 +259,50 @@ def record_attendance():
         rfid_uid = request.form.get('rfid')
         live_image = request.files.get('live_image')
 
-        # Cari karyawan
-        emp_resp = supabase.table('employees').select('id, name').eq('rfid_uid', rfid_uid).single().execute()
-        if not emp_resp.data:
-            return jsonify({"error": "ID tidak ditemukan"}), 404
+        if not rfid_uid or not live_image:
+            return jsonify({"error": "Data tidak lengkap"}), 400
 
-        employee = emp_resp.data
+        # 1. Cek Karyawan
+        emp_response = supabase.table('employees').select('id, name').eq('rfid_uid', rfid_uid).single().execute()
+        if not emp_response.data:
+             return jsonify({"error": "ID Karyawan tidak ditemukan."}), 404
+        
+        employee = emp_response.data
 
-        # Kirim ke API verifikasi wajah
+        # 2. Kirim ke API Teman
         files = {'file': (live_image.filename, live_image.stream, live_image.mimetype)}
         data = {'user_id': rfid_uid}
 
         try:
-            api_res = requests.post(FRIEND_API_URL, files=files, data=data, timeout=30)
-            api_data = api_res.json()
-        except:
-            return jsonify({"error": "Gagal koneksi ke server AI"}), 502
+            api_response = requests.post(FRIEND_API_URL, files=files, data=data, timeout=30)
+            api_result = {}
+            try:
+                api_result = api_response.json()
+            except:
+                pass
+        except Exception as api_err:
+            return jsonify({"error": "Gagal menghubungi server AI."}), 502
 
-        if api_res.status_code != 200:
-            return jsonify({"error": "Wajah tidak cocok", "details": api_data}), 401
-
-        # Waktu sekarang
-        now = datetime.now()
-        today_str = now.strftime("%Y-%m-%d")
-        current_time = now.time()
-
-        # Cari record hari ini
-        today_records = supabase.table("attendance_records") \
-            .select("id, type") \
-            .eq("employee_id", employee["id"]) \
-            .filter("timestamp", "gte", f"{today_str}T00:00:00") \
-            .filter("timestamp", "lte", f"{today_str}T23:59:59") \
-            .execute().data
-
-        has_check_in = any(r["type"] == "check_in" for r in today_records)
-        has_check_out = any(r["type"] == "check_out" for r in today_records)
-
-        # ❗ Blokir bila sudah check-in & check-out
-        if has_check_in and has_check_out:
-            return jsonify({
-                "error": "Hari ini sudah lengkap absen (check-in & check-out)",
-                "status": "Hadir"
-            }), 400
-
-        # Tentukan jenis absensi
-        if not has_check_in:
-            att_type = "check_in"
-            status_ket = "Tepat Waktu" if current_time <= JAM_MASUK_BATAS else "Terlambat"
-        else:
-            att_type = "check_out"
-            status_ket = "Hadir"
-
-        # Insert record
+        # 3. Cek Hasil AI
+        if api_response.status_code != 200:
+             return jsonify({
+                 "error": "Wajah tidak cocok", 
+                 "details": api_result 
+             }), 401
+        
+        # 4. Catat Absensi
+        today = datetime.now().strftime('%Y-%m-%d')
+        rec_response = supabase.table('attendance_records').select('id').eq('employee_id', employee['id']).filter('timestamp', 'gte', f"{today}T00:00:00").execute()
+        att_type = 'check_out' if rec_response.data else 'check_in'
+        
         supabase.table('attendance_records').insert({
-            "employee_id": employee["id"],
-            "timestamp": now.isoformat(),
-            "type": att_type,
-            "attendance_status": status_ket
+            'employee_id': employee['id'], 'type': att_type
         }).execute()
 
-        # Response
         return jsonify({
-            "success": True,
-            "message": f"Absensi {att_type} berhasil",
-            "attendance_status": status_ket,
-            "details": api_data
+            "success": True, 
+            "message": f"Absensi '{att_type}' Berhasil!",
+            "details": api_result
         }), 200
 
     except Exception as e:
