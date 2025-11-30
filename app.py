@@ -154,48 +154,78 @@ def update_attendance(record_id):
     try:
         data = request.get_json()
 
-        # Ambil data dari input frontend
-        date_val = data.get("date")          # Format: YYYY-MM-DD
-        check_in_time = data.get("check_in") # Format: HH:MM
-        check_out_time = data.get("check_out") # Format: HH:MM
-        status = data.get("attendance_status")
+        # Data BARU yang diinginkan user
+        new_date_val = data.get("date")          # Format: YYYY-MM-DD
+        new_check_in_time = data.get("check_in") # Format: HH:MM
+        new_check_out_time = data.get("check_out") # Format: HH:MM
+        new_status = data.get("attendance_status")
 
-        # 1. Cari tahu dulu record_id ini milik karyawan siapa
-        # Kita butuh employee_id untuk mencari pasangannya
-        current_record = supabase.table("attendance_records").select("employee_id").eq("id", record_id).execute()
+        # 1. AMBIL DATA LAMA DULU (PENTING!)
+        # Kita butuh employee_id DAN tanggal lama (timestamp) untuk mencari pasangannya
+        current_record = supabase.table("attendance_records").select("*").eq("id", record_id).execute()
         
         if not current_record.data:
             return jsonify({"error": "Record not found"}), 404
             
-        employee_id = current_record.data[0]['employee_id']
+        old_data = current_record.data[0]
+        employee_id = old_data['employee_id']
+        
+        # Ambil tanggal lama dari timestamp yang tersimpan di DB
+        # Asumsi format timestamp di DB: "2025-11-30T08:00:00"
+        original_timestamp_str = old_data['timestamp'] 
+        original_date = original_timestamp_str.split("T")[0] # Ambil YYYY-MM-DD lama
 
-        # 2. UPDATE CHECK IN (Mencari record tipe check_in di tanggal & karyawan tsb)
-        if check_in_time:
-            # Buat timestamp lengkap
-            new_in_ts = f"{date_val}T{check_in_time}:00"
+        # ==========================================
+        # 2. UPDATE CHECK IN
+        # Cari record check_in milik user ini di TANGGAL LAMA, lalu update ke TANGGAL BARU
+        # ==========================================
+        if new_check_in_time:
+            new_in_ts = f"{new_date_val}T{new_check_in_time}:00"
             
-            # Update row yang type='check_in'
-            # Kita filter berdasarkan employee_id dan tanggal (menggunakan filter lte & gte untuk tanggal)
-            # Atau cara simpel: cari row check_in milik user ini di tanggal ini
+            # Query: Cari data employee ini, tipe check_in, di tanggal ASLI (original_date)
             supabase.table("attendance_records").update({
                 "timestamp": new_in_ts
-            }).eq("employee_id", employee_id).eq("type", "check_in").gte("timestamp", f"{date_val}T00:00:00").lte("timestamp", f"{date_val}T23:59:59").execute()
+            }).match({
+                "employee_id": employee_id,
+                "type": "check_in"
+            }).gte("timestamp", f"{original_date}T00:00:00").lte("timestamp", f"{original_date}T23:59:59").execute()
 
-        # 3. UPDATE CHECK OUT (Mencari record tipe check_out di tanggal & karyawan tsb)
-        if check_out_time:
-            new_out_ts = f"{date_val}T{check_out_time}:00"
-            
+        # ==========================================
+        # 3. UPDATE CHECK OUT
+        # ==========================================
+        if new_check_out_time:
+            new_out_ts = f"{new_date_val}T{new_check_out_time}:00"
             update_payload = {"timestamp": new_out_ts}
-            if status:
-                update_payload["attendance_status"] = status
+            if new_status:
+                update_payload["attendance_status"] = new_status
 
-            # Update row yang type='check_out'
-            supabase.table("attendance_records").update(update_payload).eq("employee_id", employee_id).eq("type", "check_out").gte("timestamp", f"{date_val}T00:00:00").lte("timestamp", f"{date_val}T23:59:59").execute()
+            # Cek dulu apakah data check_out sudah ada di tanggal lama?
+            check_out_exist = supabase.table("attendance_records").select("id").match({
+                "employee_id": employee_id,
+                "type": "check_out"
+            }).gte("timestamp", f"{original_date}T00:00:00").lte("timestamp", f"{original_date}T23:59:59").execute()
+
+            if check_out_exist.data:
+                # Kalo ada, kita UPDATE record tanggal lama itu ke tanggal baru
+                supabase.table("attendance_records").update(update_payload).eq("id", check_out_exist.data[0]['id']).execute()
+            else:
+                # Kalo sebelumnya gak ada (misal lupa absen pulang), kita INSERT baru di tanggal baru
+                supabase.table("attendance_records").insert({
+                    "employee_id": employee_id,
+                    "timestamp": new_out_ts,
+                    "type": "check_out",
+                    "attendance_status": new_status or "Hadir"
+                }).execute()
+        
+        # (Opsional) Jika user menghapus jam check_out (kosong), kita bisa hapus row check_out
+        elif not new_check_out_time and old_data['type'] == 'check_out':
+             # Logic penghapusan bisa ditambahkan di sini jika perlu
+             pass
 
         return jsonify({"success": True})
 
     except Exception as e:
-        print(f"Error: {e}") # Print error di console server untuk debugging
+        print(f"Error backend: {e}")
         return jsonify({"error": str(e)}), 500
     
 
