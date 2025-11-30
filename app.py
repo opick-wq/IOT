@@ -317,17 +317,18 @@ def record_attendance():
         # ============================================
         
         # KONDISI 1: BELUM CHECK-IN SAMA SEKALI
+        # KONDISI 1: BELUM CHECK-IN SAMA SEKALI
         if today_checkin is None:
             check_in_time = now.time()
-            # Tentukan status absensi (Sesuaikan variable BATAS_TELAT kamu)
             status = "Telat" if check_in_time > BATAS_TELAT else "Tepat Waktu"
 
+            # TAMBAHKAN .select() DISINI
             supabase.table('attendance_records').insert({
                 "employee_id": employee['id'],
                 "timestamp": now.isoformat(),
                 "type": "check_in",
                 "attendance_status": status
-            }).execute()
+            }).select().execute()  # <--- PERBAIKAN: Tambah .select()
 
             return jsonify({
                 "success": True,
@@ -358,12 +359,13 @@ def record_attendance():
                 }), 400
 
             # JIKA BELUM ADA DATA CHECK-OUT -> LAKUKAN CHECK-OUT
+            # TAMBAHKAN .select() DISINI JUGA
             supabase.table('attendance_records').insert({
                 "employee_id": employee['id'],
                 "timestamp": now.isoformat(),
                 "type": "check_out",
                 "attendance_status": "Hadir"
-            }).execute()
+            }).select().execute() # <--- PERBAIKAN: Tambah .select()
 
             return jsonify({
                 "success": True,
@@ -375,6 +377,9 @@ def record_attendance():
 
     except Exception as e:
         print("ERROR:", e)
+        # Tambahkan print traceback biar jelas kalau ada error lain
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
     
 @app.route('/api/employees-full-list', methods=['GET'])
