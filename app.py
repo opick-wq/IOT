@@ -14,7 +14,8 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev_secret")
 
 # --- KONFIGURASI CORS ---
 # Izinkan semua origin untuk akses API (penting untuk pengembangan React terpisah)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+# KODE BARU (BENAR - Izinkan SEMUA):
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # --- KONFIGURASI SUPABASE & API LAIN ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
