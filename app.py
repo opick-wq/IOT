@@ -474,6 +474,85 @@ def delete_employee(id):
     except Exception as e:
         print(f"Error deleting: {e}")
         return jsonify({"error": str(e)}), 500
+    
+# Helper untuk ambil setting alat (ID=1)
+def get_device_setting():
+    # Ambil data dari table device_settings baris pertama (id=1)
+    res = supabase.table('device_settings').select('*').eq('id', 1).single().execute()
+    return res.data
+
+# 1. Endpoint untuk Website: Cek Status & Ambil UID
+@app.route('/web/status', methods=['GET'])
+def get_status_web():
+    try:
+        setting = get_device_setting()
+        
+        # Logika: Jika data UID sudah lama (misal > 10 detik lalu), anggap null agar tidak terbaca ulang
+        # (Opsional, di frontend sudah ada logic filter duplicate, tapi ini safety)
+        
+        return jsonify({
+            "is_active": setting['is_active'],
+            "latest_uid": setting['latest_uid']
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 2. Endpoint untuk Website: Tombol ON/OFF
+@app.route('/web/toggle', methods=['POST'])
+def toggle_device():
+    try:
+        data = request.json
+        new_status = data.get('active')
+        
+        # Update ke Supabase
+        supabase.table('device_settings').update({
+            'is_active': new_status,
+            'latest_uid': None # Reset UID saat status berubah
+        }).eq('id', 1).execute()
+        
+        return jsonify({"message": "Status berhasil diupdate", "current_status": new_status})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 3. Endpoint untuk ALAT (NodeMCU): Cek apakah boleh scan?
+@app.route('/iot/check_active', methods=['GET'])
+def check_active():
+    try:
+        setting = get_device_setting()
+        return jsonify({"is_active": setting['is_active']})
+    except:
+        # Default aman jika error database
+        return jsonify({"is_active": False}) 
+
+# 4. Endpoint untuk ALAT (NodeMCU): Kirim UID Kartu
+@app.route('/iot/upload_uid', methods=['POST'])
+def upload_uid():
+    try:
+        # 1. Cek dulu statusnya ON atau OFF
+        setting = get_device_setting()
+        
+        if not setting['is_active']:
+            return jsonify({"message": "Device is OFF (Rejected)"}), 403
+        
+        data = request.json
+        uid = data.get('uid')
+        
+        if uid:
+            print(f"📡 [IoT] Kartu Diterima: {uid}")
+            # 2. Update UID ke Supabase dan update waktu 'last_updated'
+            now_iso = datetime.now(pytz.timezone('Asia/Jakarta')).isoformat()
+            
+            supabase.table('device_settings').update({
+                'latest_uid': uid,
+                'last_updated': now_iso
+            }).eq('id', 1).execute()
+            
+            return jsonify({"status": "success"})
+        
+        return jsonify({"status": "error", "message": "No UID"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    
 
 if __name__ == '__main__':
     app.run(debug=True)
