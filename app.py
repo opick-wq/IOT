@@ -293,6 +293,29 @@ def record_attendance():
         if api_response.status_code != 200:
             return jsonify({"error": "Wajah tidak cocok", "details": api_result}), 401
 
+        distance = 1.0 # Default angka jelek (tidak mirip)
+        
+        # Cek berbagai kemungkinan format JSON dari API
+        if 'details' in api_result and 'distance' in api_result['details']:
+            distance = api_result['details']['distance']
+        elif 'distance' in api_result:
+            distance = api_result['distance']
+        elif 'attendance_data' in api_result and 'distance' in api_result['attendance_data']:
+             distance = api_result['attendance_data']['distance']
+
+        # 2. TENTUKAN BATAS (Threshold)
+        MAX_DISTANCE = 0.60 
+
+        # 3. LOGIKA PENOLAKAN
+        # Jika distance di atas 0.60, STOP! Jangan biarkan kode lanjut ke bawah (penyimpanan DB).
+        if distance > MAX_DISTANCE:
+            print(f"⛔ DITOLAK SERVER: Distance {distance} terlalu jauh!")
+            return jsonify({
+                "error": "Wajah tidak cocok. Absensi Ditolak.",
+                "distance": distance,
+                "threshold": MAX_DISTANCE
+            }), 400            
+
         # ============================================
         # 3. PERSIAPAN WAKTU
         # ============================================
