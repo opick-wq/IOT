@@ -240,6 +240,44 @@ def record_attendance():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+
+@app.route('/api/attendance/manual', methods=['POST'])
+def manual_attendance():
+    try:
+        data = request.get_json()
+
+        employee_id = data.get("employee_id")
+        date = data.get("date")
+        check_in = data.get("check_in")
+        check_out = data.get("check_out")
+        status_ket = data.get("attendance_status", "Hadir")
+
+        if not employee_id or not date:
+            return jsonify({"error": "employee_id dan date wajib"}), 400
+
+        # INSERT CHECK-IN
+        if check_in:
+            supabase.table("attendance_records").insert({
+                "employee_id": employee_id,
+                "timestamp": f"{date}T{check_in}:00",
+                "type": "check_in",
+                "attendance_status": status_ket
+            }).execute()
+
+        # INSERT CHECK-OUT
+        if check_out:
+            supabase.table("attendance_records").insert({
+                "employee_id": employee_id,
+                "timestamp": f"{date}T{check_out}:00",
+                "type": "check_out",
+                "attendance_status": status_ket
+            }).execute()
+
+        return jsonify({"success": True, "message": "Data manual berhasil ditambahkan"})
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
