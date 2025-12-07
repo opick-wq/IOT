@@ -28,7 +28,7 @@ ADMIN_PASS = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
+BATAS_TELAT = time(8, 0, 0) 
 # --- API ENDPOINTS (JSON ONLY) ---
 def get_file_path_from_url(url):
     """Mengambil path file (photos/xxx.jpg) dari URL publik Supabase"""
@@ -113,6 +113,19 @@ def get_employees_list():
         return jsonify({"error": str(e)}), 500
 
 # 5. API CRUD MANUAL ABSENSI
+# Pastikan helper ini ada (seperti diskusi sebelumnya)
+def determine_status(check_in_time_str):
+    try:
+        # Parsing string jam
+        h, m = map(int, check_in_time_str.split(':'))
+        check_in_time = time(h, m, 0)
+        if check_in_time > BATAS_TELAT: # Pastikan variabel global BATAS_TELAT sudah didefinisikan
+            return "Telat"
+        return "Tepat Waktu"
+    except:
+        return "Hadir"
+
+# 5. API CRUD MANUAL ABSENSI (ANTI DUPLICATE)
 @app.route('/api/attendance/manual', methods=['POST'])
 def manual_attendance():
     try:
@@ -122,32 +135,74 @@ def manual_attendance():
         date = data.get("date")
         check_in = data.get("check_in")
         check_out = data.get("check_out")
-        status_ket = data.get("attendance_status", "Hadir")
+        
+        # Ambil status manual jika admin mengisi, jika tidak biarkan None dulu
+        input_status = data.get("attendance_status")
 
         if not employee_id or not date:
             return jsonify({"error": "employee_id dan date wajib"}), 400
 
-        # INSERT CHECK-IN
+        # Tentukan rentang waktu hari itu untuk pengecekan
+        start_of_day = f"{date}T00:00:00"
+        end_of_day = f"{date}T23:59:59"
+
+        # --- PROSES CHECK-IN ---
         if check_in:
+            # 1. Cek apakah Check-In sudah ada di tanggal tersebut?
+            existing_in = supabase.table("attendance_records").select("id") \
+                .eq("employee_id", employee_id) \
+                .eq("type", "check_in") \
+                .gte("timestamp", start_of_day) \
+                .lte("timestamp", end_of_day) \
+                .execute()
+
+            # Jika data ditemukan, tolak request
+            if existing_in.data:
+                return jsonify({
+                    "error": f"Gagal: Data Check-In untuk karyawan ini pada tanggal {date} SUDAH ADA."
+                }), 409 # 409 Conflict
+
+            # 2. Tentukan status (Otomatis atau Manual)
+            final_status = input_status
+            if not final_status:
+                final_status = determine_status(check_in)
+
+            # 3. Lakukan Insert
             supabase.table("attendance_records").insert({
                 "employee_id": employee_id,
                 "timestamp": f"{date}T{check_in}:00",
                 "type": "check_in",
-                "attendance_status": status_ket
+                "attendance_status": final_status
             }).execute()
 
-        # INSERT CHECK-OUT
+        # --- PROSES CHECK-OUT ---
         if check_out:
+            # 1. Cek apakah Check-Out sudah ada di tanggal tersebut?
+            existing_out = supabase.table("attendance_records").select("id") \
+                .eq("employee_id", employee_id) \
+                .eq("type", "check_out") \
+                .gte("timestamp", start_of_day) \
+                .lte("timestamp", end_of_day) \
+                .execute()
+
+            # Jika data ditemukan, tolak request
+            if existing_out.data:
+                return jsonify({
+                    "error": f"Gagal: Data Check-Out untuk karyawan ini pada tanggal {date} SUDAH ADA."
+                }), 409 # 409 Conflict
+
+            # 2. Lakukan Insert (Status pulang biasanya netral/Hadir/Inputan Admin)
             supabase.table("attendance_records").insert({
                 "employee_id": employee_id,
                 "timestamp": f"{date}T{check_out}:00",
                 "type": "check_out",
-                "attendance_status": status_ket
+                "attendance_status": input_status or "Hadir"
             }).execute()
 
         return jsonify({"success": True, "message": "Data manual berhasil ditambahkan"})
     
     except Exception as e:
+        print(f"Error Manual Attendance: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -254,7 +309,7 @@ def get_employee_data():
 
 # 7. API CATAT ABSENSI (VERIFIKASI WAJAH)
 # Konfigurasi Jam Masuk (untuk status otomatis)
-BATAS_TELAT = time(16, 0, 0) 
+
 @app.route('/api/record-attendance', methods=['POST'])
 def record_attendance():
     try:
