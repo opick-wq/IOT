@@ -138,9 +138,12 @@ def manual_attendance():
         
         # Ambil status manual jika admin mengisi, jika tidak biarkan None dulu
         input_status = data.get("attendance_status")
-
+    
         if not employee_id or not date:
             return jsonify({"error": "employee_id dan date wajib"}), 400
+        
+        if not check_in and not check_out:
+            return jsonify({"error": "Gagal: Jam Masuk atau Jam Keluar harus diisi!"}), 400
 
         # Tentukan rentang waktu hari itu untuk pengecekan
         start_of_day = f"{date}T00:00:00"
