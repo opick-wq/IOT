@@ -28,6 +28,7 @@ ADMIN_PASS = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 BATAS_TELAT = time(8, 0, 0) 
 # --- API ENDPOINTS (JSON ONLY) ---
 def get_file_path_from_url(url):
@@ -120,7 +121,7 @@ def determine_status(check_in_time_str):
         h, m = map(int, check_in_time_str.split(':'))
         check_in_time = time(h, m, 0)
         if check_in_time > BATAS_TELAT: # Pastikan variabel global BATAS_TELAT sudah didefinisikan
-            return "Telat"
+            return "Terlambat"
         return "Tepat Waktu"
     except:
         return "Hadir"
@@ -399,7 +400,7 @@ def record_attendance():
         # --- SKENARIO A: BELUM CHECK-IN ---
         if today_checkin is None:
             check_in_time = now.time()
-            status = "Telat" if check_in_time > BATAS_TELAT else "Tepat Waktu"
+            status = "Terlambat" if check_in_time > BATAS_TELAT else "Tepat Waktu"
 
             # === FIX: HAPUS .select() DAN TAMBAH TRY-EXCEPT KHUSUS ===
             try:
